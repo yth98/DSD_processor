@@ -1,6 +1,16 @@
 # Digital System Design - Spring 2020
 # Pipelined RISC-V Design
 
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+Current status:
+Has not passed any test
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+
 ## Work pending:
 ### Baseline
 * [] Support 20 Instructions
