@@ -638,7 +638,7 @@ always@( posedge clk ) begin
                         mem_wdata  <= data2[set];
                     end else begin
                         mem_read   <= 1;
-                        mem_addr   <= proc_addr[29:0];
+                        mem_addr   <= proc_addr[29:2];
                     end
                 end
             end
@@ -659,7 +659,7 @@ always@( posedge clk ) begin
                     mem_wdata  <= data2[set];
                 end else begin
                     mem_read   <= 1;
-                    mem_addr   <= proc_addr[29:0];
+                    mem_addr   <= proc_addr[29:2];
                 end
             end
             if ((proc_read | proc_write) & (hit1 | hit2))
@@ -669,7 +669,7 @@ always@( posedge clk ) begin
             if (mem_ready) begin
                 mem_read   <= 1;
                 mem_write  <= 0;
-                mem_addr   <= proc_addr[29:0];
+                mem_addr   <= proc_addr[29:2];
             end
         S_RD:
             if (mem_ready) begin
