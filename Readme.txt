@@ -7,8 +7,9 @@
 Past status:6/12
 Has not passed any test
 有新進度寫在這邊
-Current status:6/13
+Current status:6/20
 Has not passed any test
+error when fetch instruction with PC=0x30
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
