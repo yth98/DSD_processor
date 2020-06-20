@@ -136,9 +136,9 @@ module RISCV_Pipeline(
     output          DCACHE_ren,
     output          DCACHE_wen,
     output  [29:0]  DCACHE_addr,
-    input   [31:0]  DCACHE_wdata,
+    input   [31:0]  DCACHE_rdata,
     input           DCACHE_stall,
-    output  [31:0]  DCACHE_rdata
+    output  [31:0]  DCACHE_wdata
     );
 
 // internal wire/reg definition
