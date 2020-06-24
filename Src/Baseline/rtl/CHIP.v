@@ -349,11 +349,11 @@ always@(*) begin // ALU_EX TODO
     4'b0011: // xor
         EX_ALUout = ALUin1 ^ ALUin2;
     4'b0100: // SLL
-	    EX_ALUout = ALUin1 << shamt;
+	EX_ALUout = ALUin1 << shamt;
     4'b0101: //SRL
-	    EX_ALUout = ALUin1 >> shamt;
+	EX_ALUout = ALUin1 >> shamt;
     4'b1000: //SRA
-	    EX_ALUout = $signed(ALUin1) >>> shamt;
+	EX_ALUout = $signed(ALUin1) >>> shamt;
     default:
         EX_ALUout = 32'd0;
     endcase
