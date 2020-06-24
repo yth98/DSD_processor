@@ -280,9 +280,13 @@ end
     reg     [31:0]  ALUin1, ALUin2;
     reg      [3:0]  ALUctrl;
     reg     [31:0]  EX_ALUout;
+	reg		[31:0]	EX_noALUout;//modified by turknight
     reg     [31:0]  MEM_ALUout;
 assign  {c_ALUsrc, c_ALUop} = EX_ctrl[10:8];
 assign shamt = ALUin2[4:0];
+
+always@(*)//modified by turknight
+	EX_noALUout=EX_R2;
 
 always@(*) begin // mux1EX
     case(forward1)
@@ -293,7 +297,8 @@ always@(*) begin // mux1EX
     endcase
 end
 always@(*) begin // mux2EX
-    case(c_ALUsrc ? 2'b11 : forward2)
+	case(c_ALUsrc ? 2'b11 : forward2)
+	//case(forward2)
     2'd0: ALUin2 = EX_R2;
     2'd1: ALUin2 = WB_dataRD;
     2'd2: ALUin2 = MEM_ALUout;
@@ -367,7 +372,8 @@ always@(posedge clk) begin
     if (!rst_n)
         {MEM_ctrl, MEM_addRD, MEM_ALUin2, MEM_ALUout} <= 77'b0;
     else if (wen_EX_MEM)
-        {MEM_ctrl, MEM_addRD, MEM_ALUin2, MEM_ALUout} <= {EX_ctrl[7:0], EX_addRD, ALUin2, EX_ALUout};
+        //{MEM_ctrl, MEM_addRD, MEM_ALUin2, MEM_ALUout} <= {EX_ctrl[7:0], EX_addRD, ALUin2, EX_ALUout};
+		{MEM_ctrl, MEM_addRD, MEM_ALUin2, MEM_ALUout} <= {EX_ctrl[7:0], EX_addRD, EX_noALUout, EX_ALUout};
 end
 
 // MEM
