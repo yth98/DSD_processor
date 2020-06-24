@@ -148,7 +148,7 @@ module RISCV_Pipeline(
     reg             wen_ID_EX;
     reg             wen_EX_MEM;
     wire            wen_MEM_WB;
-assign  wen_MEM_WB = 1'b1;
+    assign  wen_MEM_WB = 1'b1;
     wire            MEM_regWrite;
     reg      [1:0]  forward1, forward2;
     reg             stallEX, flush_IF_ID, flush_MEM_WB;
@@ -282,6 +282,7 @@ end
     reg     [31:0]  EX_ALUout;
     reg     [31:0]  MEM_ALUout;
 assign  {c_ALUsrc, c_ALUop} = EX_ctrl[10:8];
+assign shamt = ALUin2[4:0];
 
 always@(*) begin // mux1EX
     case(forward1)
@@ -306,28 +307,30 @@ always@(*) begin // ALUctrlEX TODO
     2'b01:
         ALUctrl = 4'b0110;
     2'b10, 2'b11: begin
-         case(EX_InstrALU)
-         4'b0000:
+        case(EX_InstrALU)
+        4'b0000:
             ALUctrl = 4'b0010; // add
-         4'b1000:
+        4'b1000:
             ALUctrl = 4'b0110; // sub
-         4'b0111:
+        4'b0111:
             ALUctrl = 4'b0000; // and
-         4'b0110:
+        4'b0110:
             ALUctrl = 4'b0001; // or
-         4'b0010:
+        4'b0010:
             ALUctrl = 4'b0111; // slt
-	 4'b1100:
-	    ALUctrl = 4'b0011; // xor
-	 4'b0001:
-	    ALUctrl = 4'b0100; // SLL
-	 4'b0101:
-	    ALUctrl = 4'b0101; // SRL
-	 4'b1101:
-	    ALUctrl = 4'b1000; // SRA
+	    4'b1100:
+	        ALUctrl = 4'b0011; // xori
+        4'b0100:
+            ALUctrl = 4'b0011; // xori
+	    4'b0001:
+	        ALUctrl = 4'b0100; // SLL
+	    4'b0101:
+	        ALUctrl = 4'b0101; // SRL
+	    4'b1101:
+	        ALUctrl = 4'b1000; // SRA
         default:
             ALUctrl = 4'b0000;
-         endcase
+        endcase
       end
     endcase
 end
@@ -346,11 +349,11 @@ always@(*) begin // ALU_EX TODO
     4'b0011: // xor
         EX_ALUout = ALUin1 ^ ALUin2;
     4'b0100: // SLL
-	EX_ALUout = ALUin1 << shamt;
+	    EX_ALUout = ALUin1 << shamt;
     4'b0101: //SRL
-	EX_ALUout = ALUin1 >> shamt;
+	    EX_ALUout = ALUin1 >> shamt;
     4'b1000: //SRA
-	EX_ALUout = $signed(ALUin1) >>> shamt;
+	    EX_ALUout = $signed(ALUin1) >>> shamt;
     default:
         EX_ALUout = 32'd0;
     endcase
