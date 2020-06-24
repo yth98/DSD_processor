@@ -317,7 +317,7 @@ always@(*) begin // ALUctrlEX TODO
             ALUctrl = 4'b0001; // or
          4'b0010:
             ALUctrl = 4'b0111; // slt
-	 4'b0100:
+	 4'b1100:
 	    ALUctrl = 4'b0011; // xor
 	 4'b0001:
 	    ALUctrl = 4'b0100; // SLL
