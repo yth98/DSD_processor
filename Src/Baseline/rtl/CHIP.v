@@ -318,16 +318,16 @@ always@(*) begin // ALUctrlEX TODO
             ALUctrl = 4'b0001; // or
         4'b0010:
             ALUctrl = 4'b0111; // slt
-	    4'b1100:
-	        ALUctrl = 4'b0011; // xori
+	4'b1100:
+	    ALUctrl = 4'b0011; // xori
         4'b0100:
             ALUctrl = 4'b0011; // xori
-	    4'b0001:
-	        ALUctrl = 4'b0100; // SLL
-	    4'b0101:
-	        ALUctrl = 4'b0101; // SRL
-	    4'b1101:
-	        ALUctrl = 4'b1000; // SRA
+	4'b0001:
+	    ALUctrl = 4'b0100; // SLL
+	4'b0101:
+	    ALUctrl = 4'b0101; // SRL
+	4'b1101:
+	    ALUctrl = 4'b1000; // SRA
         default:
             ALUctrl = 4'b0000;
         endcase
