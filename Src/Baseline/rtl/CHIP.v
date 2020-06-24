@@ -317,15 +317,15 @@ always@(*) begin // ALUctrlEX TODO
             ALUctrl = 4'b0001; // or
          4'b0010:
             ALUctrl = 4'b0111; // slt
-		     4'b0100:
-			      ALUctrl = 4'b0011; // xor
-		     4'b0001:
-			      ALUctrl = 4'b0100; // SLL
-		     4'b0101:
-			      ALUctrl = 4'b0101; // SRL
-		     4'b1101:
-			      ALUctrl = 4'b1000; // SRA
-         default:
+	 4'b0100:
+	    ALUctrl = 4'b0011; // xor
+	 4'b0001:
+	    ALUctrl = 4'b0100; // SLL
+	 4'b0101:
+	    ALUctrl = 4'b0101; // SRL
+	 4'b1101:
+	    ALUctrl = 4'b1000; // SRA
+        default:
             ALUctrl = 4'b0000;
          endcase
       end
@@ -343,14 +343,14 @@ always@(*) begin // ALU_EX TODO
         EX_ALUout = ALUin1 | ALUin2;
     4'b0111: // slt
         EX_ALUout = (ALUin1 < ALUin2) ? 32'd1 : 32'd0;
-	  4'b0011: // xor
-		    EX_ALUout = ALUin1 ^ ALUin2;
-	  4'b0100: // SLL
-		    EX_ALUout = ALUin1 << shamt;
-	  4'b0101: //SRL
-		    EX_ALUout = ALUin1 >> shamt;
-	  4'b1000: //SRA
-		    EX_ALUout = $signed(ALUin1) >>> shamt;
+    4'b0011: // xor
+        EX_ALUout = ALUin1 ^ ALUin2;
+    4'b0100: // SLL
+	EX_ALUout = ALUin1 << shamt;
+    4'b0101: //SRL
+	EX_ALUout = ALUin1 >> shamt;
+    4'b1000: //SRA
+	EX_ALUout = $signed(ALUin1) >>> shamt;
     default:
         EX_ALUout = 32'd0;
     endcase
