@@ -345,7 +345,7 @@ always@(*) begin // ALU_EX TODO
     4'b0001: // or
         EX_ALUout = ALUin1 | ALUin2;
     4'b0111: // slt
-        EX_ALUout = (ALUin1 < ALUin2) ? 32'd1 : 32'd0;
+	EX_ALUout = ( $signed( ALUin1 ) < $signed( ALUin2 )) ? 32'd1 : 32'd0;
     4'b0011: // xor
         EX_ALUout = ALUin1 ^ ALUin2;
     4'b0100: // SLL
