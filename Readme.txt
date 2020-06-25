@@ -4,12 +4,8 @@
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-Past status:6/12
-Has not passed any test
-有新進度寫在這邊
-Current status:6/21
-Has not passed any test
-has not finished ALU logic support for all kind of instruction
+Current status:6/25
+has passed no hazzard
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
