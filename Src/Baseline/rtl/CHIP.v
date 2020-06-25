@@ -432,9 +432,29 @@ always@(*) begin
     // 1. EX Data hazard
     // MEM_regWrite MEM_addRD EX_addR1 EX_addR2
     // forward1 forward2
+    if( MEM_regWrite && MEM_addRD!=0 && MEM_addRD == EX_addR1 ) 
+        forward1 = 2'b10;
+    if( MEM_regWrite && MEM_addRD!=0 && MEM_addRD == EX_addR2 )
+        forward2 = 2'b10;
+ 
     // 2. MEM Data hazard
     // c_regWrite WB_addRD EX_addR1 EX_addR2
     // forward1 forward2
+    if( c_regWrite     && WB_addRD!=0   && 
+        !(MEM_regWrite && MEM_addRD!=0) && 
+        MEM_addRD      != EX_addR1      && 
+        WB_addRD       == EX_addR1)begin
+        forward1 = 2'b01;
+    end
+
+    if( c_regWrite     && WB_addRD!=0   && 
+        !(MEM_regWrite && MEM_addRD!=0) && 
+        MEM_addRD      != EX_addR2      && 
+        WB_addRD       == EX_addR2)begin
+        forward2 = 2'b01;
+    end
+
+
 end
 
 // Hazard detection / Pipeline stall unit TODO
@@ -445,6 +465,11 @@ always@(*) begin
     // 1. Load-Use Data Hazard
     // EX_memRead EX_addR1 EX_addR2 ID_addR1 ID_addR2
     // wen_PC wen_IF_ID stallEX
+    if( EX_memRead && ( EX_addR1==ID_addR1 || EX_addR2==ID_addR2 ) ) begin
+        wen_PC = 0;
+        wen_IF_ID = 0;
+        stallEX = 1;
+    end
     // 2. Branch Hazard
     // ID_Instr
     // flush_IF_ID
