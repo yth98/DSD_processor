@@ -155,7 +155,13 @@ module RISCV_Pipeline(
 
 // ================== IF =========================//
     reg     [31:0]  PC;
-    wire    [31:0]  PCnxt;
+    reg    [31:0]  PCnxt;
+    reg    [31:0] Pcnxt_temp, Pcnxt_temp_nxt;
+    reg     problem1, problem1_nxt;
+/*always@(*)begin
+    if(ID_Instr[6:2] == 5'b11011 && ICACHE_stall)
+        problem1_nxt = 0;
+end*/
 always@(posedge clk) begin
     if (!rst_n)
         PC <= 32'd0;
@@ -164,6 +170,16 @@ always@(posedge clk) begin
             PC <= PCnxt;
     end
 end
+
+always@(posedge clk) begin
+    if (!rst_n)
+        Pcnxt_temp <= 32'd0;
+    else begin
+        Pcnxt_temp <= Pcnxt_temp_nxt;
+    end
+end
+
+
 
     wire    [31:0]  Instr_C, IF_Instr;
     wire     [1:0]  PCoff;
@@ -261,7 +277,7 @@ always@(*) begin // immID
         ID_imm = 32'd0;
     endcase
 end
-assign  ID_PCpi = ID_PC + ID_imm; // addID
+assign  ID_PCpi = ID_PC + ID_imm; // addID jal and branch
 
 //================ ID/EX registers ==================//
     reg     [10:0]  EX_ctrl;
@@ -394,7 +410,8 @@ assign  {c_branch, c_jal, c_jalr, c_memRead, c_memWrite} = MEM_ctrl[7:3];
 assign  ALUzero = (MEM_ALUout == 32'd0) ? 1'b1 : 1'b0;
 and     andEX(beq, c_branch, ALUzero);
 or      or_EX(PCsrc, beq, c_jal);
-assign  PCnxt   = c_jalr ? MEM_ALUout : (PCsrc ? ID_PCpi : IF_PCpX); // PCpi PCpX propagate TODO
+
+//assign  PCnxt   = c_jalr ? MEM_ALUout : (PCsrc ? ID_PCpi : IF_PCpX); // PCpi PCpX propagate TODO
 
 assign  DCACHE_ren   = c_memRead;
 assign  DCACHE_wen   = c_memWrite;
@@ -462,6 +479,7 @@ assign  EX_memRead = EX_ctrl[4];
 always@(*) begin
     {wen_PC, wen_IF_ID, wen_ID_EX, wen_EX_MEM} = 4'b1111;
     {flush_IF_ID, stallEX, flush_MEM_WB} = 3'b000;
+    PCnxt = IF_PCpX;
     // 1. Load-Use Data Hazard
     // EX_memRead EX_addR1 EX_addR2 ID_addR1 ID_addR2
     // wen_PC wen_IF_ID stallEX
@@ -473,10 +491,27 @@ always@(*) begin
     // 2. Branch Hazard
     // ID_Instr
     // flush_IF_ID
+
+    /*if(EX_ctrl[5])begin //jalr
+        PCnxt = EX_ALUout;
+    end*/
+    
+    if( ID_Instr[6:2] == 5'b11011) begin
+        PCnxt = ID_PCpi;
+        flush_IF_ID = 1'b1;
+        //PCnxt = ID_PCpi;
+    end 
+    if(EX_ctrl[5])begin
+    
+    end
+   
     // 3. ICACHE stall
     if (ICACHE_stall) begin
         wen_PC = 1'b0;
-        flush_IF_ID = 1'b1;
+        //flush_IF_ID = 1'b1;
+        wen_IF_ID = 1'b0;
+      //wen_ID_EX = 1'b0; 
+        //    PCnxt = Pcnxt_temp;
     end
     // 4. DCACHE stall
     // DCACHE_stall
@@ -488,6 +523,9 @@ always@(*) begin
         wen_EX_MEM = 1'b0;
         flush_MEM_WB= 1'b1;
     end
+
+
+   
 end
 endmodule
 
