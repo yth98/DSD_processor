@@ -295,13 +295,13 @@ assign  ID_PCpi = ID_PC + ID_imm; // addID jal and branch
 //================ ID/EX registers ==================//
     reg     [10:0]  EX_ctrl;
     reg      [4:0]  EX_addR1, EX_addR2, EX_addRD;
-    reg      [3:0]  EX_InstrALU;
+    reg      [3:0]  EX_InstrALU, EX_Instru_temp;
     reg     [31:0]  EX_PCpX, EX_PCpi, EX_R1, EX_R2, EX_imm, EX_Instr;
 always@(posedge clk) begin
     if (!rst_n)
         {EX_ctrl, EX_addR1, EX_addR2, EX_addRD, EX_InstrALU, EX_PCpX, EX_PCpi, EX_R1, EX_R2, EX_imm} <= 90'b0;
     else if (wen_ID_EX)
-        {EX_ctrl, EX_addR1, EX_addR2, EX_addRD, EX_InstrALU, EX_PCpX, EX_PCpi, EX_R1, EX_R2, EX_imm,EX_Instr} <=
+        {EX_ctrl, EX_addR1, EX_addR2, EX_addRD, EX_Instru_temp, EX_PCpX, EX_PCpi, EX_R1, EX_R2, EX_imm,EX_Instr} <=
         {ID_ctrl, ID_addR1, ID_addR2, ID_addRD, ID_InstrALU, ID_PCpX, ID_PCpi, ID_R1, ID_R2, ID_imm,ID_Instr}; 
 end
     //It seems that EX_addR1, EX_addR2, EX_PCpi do not need to send to EX stage. 
@@ -322,7 +322,12 @@ assign shamt = ALUin2[4:0];
 
 //modified by turknight
 assign EX_noALUout = EX_R2;
-
+always@(*)begin
+    if(EX_Instr[6:2]==5'b00100)
+        EX_InstrALU = { 1'b0,EX_Instru_temp[2:0]};
+    else
+        EX_InstrALU = EX_Instru_temp;
+end
 always@(*) begin // mux1EX
     case(forward1)
     2'd0: ALUin1 = EX_R1;
@@ -563,7 +568,7 @@ always@(*) begin
     // 1. Load-Use Data Hazard
     // EX_memRead EX_addR1 EX_addR2 ID_addR1 ID_addR2
     // wen_PC wen_IF_ID stallEX
-    if( EX_memRead && ( EX_addR1==ID_addR1 || EX_addR2==ID_addR2 ) ) begin
+    if( EX_memRead && ( EX_addRD==ID_addR1 || EX_addRD==ID_addR2 ) ) begin
         wen_PC = 0;
         wen_IF_ID = 0;
         stallEX = 1;
