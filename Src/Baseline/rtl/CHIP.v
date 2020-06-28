@@ -86,7 +86,7 @@ wire [31:0] DCACHE_rdata;
     );
     
 
-    cache D_cache(
+    L2cache D_cache(
         .clk        (clk)         ,
         .proc_reset (~rst_n)      ,
         .proc_read  (DCACHE_ren)  ,
@@ -103,7 +103,7 @@ wire [31:0] DCACHE_rdata;
         .mem_ready  (mem_ready_D)
     );
 
-    cache I_cache(
+    L2cache I_cache(
         .clk        (clk)         ,
         .proc_reset (~rst_n)      ,
         .proc_read  (ICACHE_ren)  ,
@@ -567,16 +567,15 @@ always@(*) begin
 end
 endmodule
 
-
-module cache(
+module L2cache(
     clk,
     proc_reset,
     proc_read,
     proc_write,
     proc_addr,
+    proc_rdata,
     proc_wdata,
     proc_stall,
-    proc_rdata,
     mem_read,
     mem_write,
     mem_addr,
@@ -584,7 +583,7 @@ module cache(
     mem_wdata,
     mem_ready
 );
-
+    
 //==== input/output definition ============================
     input          clk;
     // processor interface
@@ -600,593 +599,160 @@ module cache(
     output         mem_read, mem_write;
     output  [27:0] mem_addr;
     output [127:0] mem_wdata;
-
-//==== states =============================================
-    reg   [2:0] state, state_next;
-    parameter S_IDLE = 3'd0;
-    parameter S_MEM_READ = 3'd1;
-    parameter S_MEM_READ_REPLACE = 3'd2;
-    parameter S_READ_WRITE = 3'd3;
-
+    
 //==== wire/reg definition ================================
-    // proc_addr: 30b
-    // tag: 25b, index: 3b, word offset: 2b
-    // block: valid(1b) + dirty(1b) + tag(25b) + data(32b*4) = 155b
-    reg  [154:0] block [0:7];
-    reg  [154:0] block_next [0:7];
-    reg   [24:0] proc_tag;
-    reg    [2:0] proc_index;
-    reg    [1:0] proc_offset;
+    reg            mem_read, mem_write;
+    reg     [27:0] mem_addr;
+    reg    [127:0] mem_wdata;
 
-    reg  [154:0] proc_block;
-    reg          proc_block_valid;
-    reg          proc_block_dirty;
-    reg   [24:0] proc_block_tag;
-    reg  [127:0] proc_block_data;
-
-    reg  [127:0] proc_new_data;
-    reg  [127:0] proc_replace_data;
-    reg   [31:0] proc_block_word;
-    reg   [31:0] buf_rdata_word;
-
-    wire         proc_stall;
-    reg          proc_stall_r, proc_stall_w;
-    wire  [31:0] proc_rdata;
-    reg   [31:0] proc_rdata_r, proc_rdata_w;
-
-    reg          buf_read;
-    reg          buf_write;
-    reg          buf_write_request_r, buf_write_request_w;
-    wire  [27:0] buf_addr;
-    reg   [27:0] buf_addr_r, buf_addr_w;
-    wire [127:0] buf_wdata;
-    reg  [127:0] buf_wdata_r, buf_wdata_w;
-
-    reg          hit;
-    wire [127:0] buf_rdata;
-    wire         buf_stall;
-
-    integer i;
-
-//==== instances ==========================================
-    buffer buffer_inst(
-        .clk(clk),
-        .rst(proc_reset),
-        .buf_addr(buf_addr),
-        .buf_read(buf_read),
-        .buf_write(buf_write),
-        .buf_rdata(buf_rdata),
-        .buf_wdata(buf_wdata),
-        .buf_stall(buf_stall),
-        .mem_addr(mem_addr),
-        .mem_read(mem_read),
-        .mem_write(mem_write),
-        .mem_rdata(mem_rdata),
-        .mem_wdata(mem_wdata),
-        .mem_ready(mem_ready)
-    );
-
+    reg      [2:0] state_w;
+    reg      [2:0] state;
+    reg      [3:0] valid1, valid2;
+    reg      [3:0] dirty1, dirty2;
+    reg      [3:0] lru;             // 0:data1 1:data2
+    reg     [29:4] tag1    [0:3], tag2    [0:3];
+    reg    [127:0] data1   [0:3], data2   [0:3];
+    wire           hit1, hit2;
+    wire     [3:2] set;
 //==== combinational circuit ==============================
-    assign proc_stall = proc_stall_w;
-    assign proc_rdata = proc_rdata_w;
-    assign buf_addr = buf_addr_w;
-    assign buf_wdata = buf_wdata_w;
+    localparam S_IDLE = 3'd0;
+    localparam S_WBRD = 3'd1;
+    localparam S_RD   = 3'd2;
+    localparam S_WB   = 3'd3;
+    localparam S_RDWB = 3'd4;
 
-    always @ (*) begin
-        proc_tag = proc_addr[29:5];
-        proc_index = proc_addr[4:2];
-        proc_offset = proc_addr[1:0];
-        proc_block = block[proc_index];
-        proc_block_valid = proc_block[154];
-        proc_block_dirty = proc_block[153];
-        proc_block_tag = proc_block[152:128];
-        proc_block_data = proc_block[127:0];
-        hit = proc_tag == proc_block_tag;
+assign set = proc_addr[3:2];
+assign proc_stall = (~(hit1 | hit2))&&(proc_read|proc_write);
+assign proc_rdata = proc_read & hit1
+                  ? data1[set][proc_addr[1:0]*32+:32]
+                  : proc_read & hit2
+                  ? data2[set][proc_addr[1:0]*32+:32]
+                  : 32'd0;
+assign hit1 = valid1[set] & (tag1[set] == proc_addr[29:4]);
+assign hit2 = valid2[set] & (tag2[set] == proc_addr[29:4]);
 
-        case (proc_offset)
-            2'd0: begin
-                proc_block_word = proc_block_data[31:0];
-                proc_new_data = {proc_block_data[127:32], proc_wdata};
-                buf_rdata_word = buf_rdata[31:0];
-                proc_replace_data = {buf_rdata[127:32], proc_wdata};
-            end
-            2'd1: begin
-                proc_block_word = proc_block_data[63:32];
-                proc_new_data = {proc_block_data[127:64], proc_wdata, proc_block_data[31:0]};
-                buf_rdata_word = buf_rdata[63:32];
-                proc_replace_data = {buf_rdata[127:64], proc_wdata, buf_rdata[31:0]};
-            end
-            2'd2: begin
-                proc_block_word = proc_block_data[95:64];
-                proc_new_data = {proc_block_data[127:96], proc_wdata, proc_block_data[63:0]};
-                buf_rdata_word = buf_rdata[95:64];
-                proc_replace_data = {buf_rdata[127:96], proc_wdata, buf_rdata[63:0]};
-            end
-            2'd3: begin
-                proc_block_word = proc_block_data[127:96];
-                proc_new_data = {proc_wdata, proc_block_data[95:0]};
-                buf_rdata_word = buf_rdata[127:96];
-                proc_replace_data = {proc_wdata, buf_rdata[95:0]};
-            end
-        endcase
+always@(*) begin
+    case (state)
+    S_IDLE: begin
+        if (hit1 | hit2)
+            state_w = S_IDLE;
+        else if (proc_read)
+            state_w = (~lru[set] & dirty1[set] | lru[set] & dirty2[set]) ? S_WBRD : S_RD;
+        else if (proc_write)
+            state_w = (~lru[set] & dirty1[set] | lru[set] & dirty2[set]) ? S_WB : S_RDWB;
+        else
+            state_w = S_IDLE;
     end
-
-    always @ (*) begin
+    S_WBRD:
+        state_w = mem_ready ? S_RD : S_WBRD;
+    S_RD:
+        state_w = mem_ready ? S_IDLE : S_RD;
+    S_WB:
+        state_w = mem_ready ? S_RDWB : S_WB;
+    S_RDWB:
+        state_w = mem_ready ? S_IDLE : S_RDWB;
+    default:
+        state_w = S_IDLE;
+    endcase
+end
+//==== sequential circuit =================================
+always@( posedge clk ) begin
+    if( proc_reset ) begin
+        mem_read   <= 0;
+        mem_write  <= 0;
+        state   <= S_IDLE;
+        valid1  <= 4'b0;
+        valid2  <= 4'b0;
+        dirty1  <= 4'b0;
+        dirty2  <= 4'b0;
+        lru     <= 4'b0;
+    end
+    else begin
+        state   <= state_w;
         case (state)
         S_IDLE: begin
             if (proc_read) begin
-                if (proc_block_valid) begin
-                    if (hit) begin
-                        // * read hit, valid, clean/dirty
-                        // > read from cache
-                        proc_rdata_w = proc_block_word;
-                        proc_stall_w = 1'b0;
-
-                        for (i=0; i<8; i=i+1) block_next[i] = block[i];
-                        buf_addr_w = proc_addr[29:2];
-                        buf_wdata_w = buf_wdata_r;
-                        buf_write_request_w = buf_write_request_r;
-                        state_next = state;
-                        buf_read = 1'b0;
-                        buf_write = 1'b0;
-                    end
-                    else if (proc_block_dirty) begin
-                        // * read miss, valid, dirty
-                        // > read from memory, and write to memory
-                        if (~buf_stall) begin
-                            buf_read = 1'b1;
-                            buf_write = 1'b0;
-                            buf_wdata_w = proc_block_data;
-                            proc_stall_w = 1'b1;
-                            state_next = S_READ_WRITE;
-
-                            for (i=0; i<8; i=i+1) block_next[i] = block[i];
-                            proc_rdata_w = proc_rdata_r;
-                            buf_addr_w = proc_addr[29:2];
-                            buf_write_request_w = buf_write_request_r;
-                        end
-                        else begin
-                            for (i=0; i<8; i=i+1) block_next[i] = block[i];
-                            proc_stall_w = 1'b1;
-                            proc_rdata_w = proc_rdata_r;
-                            buf_addr_w = proc_addr[29:2];
-                            buf_wdata_w = buf_wdata_r;
-                            buf_write_request_w = buf_write_request_r;
-                            state_next = state;
-                            buf_read = 1'b0;
-                            buf_write = 1'b0;
-                        end
-                    end
-                    else begin
-                        // * read miss, valid, clean
-                        // > read from memory
-                        if (~buf_stall) begin
-                            buf_read = 1'b1;
-                            buf_write = 1'b0;
-                            proc_stall_w = 1'b1;
-                            state_next = S_MEM_READ;
-
-                            for (i=0; i<8; i=i+1) block_next[i] = block[i];
-                            proc_rdata_w = proc_rdata_r;
-                            buf_addr_w = proc_addr[29:2];
-                            buf_wdata_w = buf_wdata_r;
-                            buf_write_request_w = buf_write_request_r;
-                        end
-                        else begin
-                            for (i=0; i<8; i=i+1) block_next[i] = block[i];
-                            proc_stall_w = 1'b1;
-                            proc_rdata_w = proc_rdata_r;
-                            buf_addr_w = proc_addr[29:2];
-                            buf_wdata_w = buf_wdata_r;
-                            buf_write_request_w = buf_write_request_r;
-                            state_next = state;
-                            buf_read = 1'b0;
-                            buf_write = 1'b0;
-                        end
-                    end
-                end
-                else begin
-                    // * read miss/hit, invalid, clean/dirty
-                    // > read from memory
-                    if (~buf_stall) begin
-                        buf_read = 1'b1;
-                        buf_write = 1'b0;
-                        proc_stall_w = 1'b1;
-                        state_next = S_MEM_READ;
-                        
-                        for (i=0; i<8; i=i+1) block_next[i] = block[i];
-                        proc_rdata_w = proc_rdata_r;
-                        buf_addr_w = proc_addr[29:2];
-                        buf_wdata_w = buf_wdata_r;
-                        buf_write_request_w = buf_write_request_r;
-                    end
-                    else begin
-                        for (i=0; i<8; i=i+1) block_next[i] = block[i];
-                        proc_stall_w = 1'b1;
-                        proc_rdata_w = proc_rdata_r;
-                        buf_addr_w = proc_addr[29:2];
-                        buf_wdata_w = buf_wdata_r;
-                        buf_write_request_w = buf_write_request_r;
-                        state_next = state;
-                        buf_read = 1'b0;
-                        buf_write = 1'b0;
+                if (proc_stall) begin
+                    if (~lru[set] & dirty1[set]) begin
+                        mem_write  <= 1;
+                        mem_addr   <= {tag1[set],set};
+                        mem_wdata  <= data1[set];
+                    end else if (lru[set] & dirty2[set]) begin
+                        mem_write  <= 1;
+                        mem_addr   <= {tag2[set],set};
+                        mem_wdata  <= data2[set];
+                    end else begin
+                        mem_read   <= 1;
+                        mem_addr   <= proc_addr[29:2];
                     end
                 end
             end
             else if (proc_write) begin
-                if (proc_block_valid & hit) begin
-                    // * write hit, valid, clean/dirty
-                    // > update the word in cache block
-                    for (i=0; i<8; i=i+1) block_next[i] = block[i];
-                    proc_rdata_w = proc_rdata_r;
-                    buf_addr_w = proc_addr[29:2];
-                    buf_wdata_w = buf_wdata_r;
-                    buf_write_request_w = buf_write_request_r;
-                    state_next = state;
-                    buf_read = 1'b0;
-                    buf_write = 1'b0;
-
-                    block_next[proc_index] = {1'b1, 1'b1, proc_tag, proc_new_data};
-                    proc_stall_w = 1'b0;
-                end
-                else if (proc_block_valid & proc_block_dirty) begin
-                    // * write miss, valid, dirty
-                    // > read from memory, then replace the word in block, write cache block to memory
-                    if (~buf_stall) begin
-                        buf_wdata_w = proc_block_data;
-                        buf_read = 1'b1;
-                        buf_write = 1'b0;
-                        buf_write_request_w = 1'b1;
-                        proc_stall_w = 1'b1;
-                        state_next = S_MEM_READ_REPLACE;
-
-                        for (i=0; i<8; i=i+1) block_next[i] = block[i];
-                        proc_rdata_w = proc_rdata_r;
-                        buf_addr_w = proc_addr[29:2];
-                    end
-                    else begin
-                        for (i=0; i<8; i=i+1) block_next[i] = block[i];
-                        proc_stall_w = 1'b1;
-                        proc_rdata_w = proc_rdata_r;
-                        buf_addr_w = proc_addr[29:2];
-                        buf_wdata_w = buf_wdata_r;
-                        buf_write_request_w = buf_write_request_r;
-                        state_next = state;
-                        buf_read = 1'b0;
-                        buf_write = 1'b0;
-                    end
-                end
-                else begin
-                    // * write miss, valid, clean
-                    // * write miss, invalid, clean/dirty
-                    // > read from memory, then replace the word in block
-                    if (~buf_stall) begin
-                        buf_read = 1'b1;
-                        buf_write = 1'b0;
-                        proc_stall_w = 1'b1;
-                        state_next = S_MEM_READ_REPLACE;
-
-                        for (i=0; i<8; i=i+1) block_next[i] = block[i];
-                        proc_rdata_w = proc_rdata_r;
-                        buf_addr_w = proc_addr[29:2];
-                        buf_wdata_w = buf_wdata_r;
-                        buf_write_request_w = buf_write_request_r;
-                    end
-                    else begin
-                        for (i=0; i<8; i=i+1) block_next[i] = block[i];
-                        proc_stall_w = 1'b1;
-                        proc_rdata_w = proc_rdata_r;
-                        buf_addr_w = proc_addr[29:2];
-                        buf_wdata_w = buf_wdata_r;
-                        buf_write_request_w = buf_write_request_r;
-                        state_next = state;
-                        buf_read = 1'b0;
-                        buf_write = 1'b0;
-                    end
+                if (hit1) begin
+                    dirty1[set] <= 1;
+                    data1[set][proc_addr[1:0]*32+:32] <= proc_wdata;
+                end else if (hit2) begin
+                    dirty2[set] <= 1;
+                    data2[set][proc_addr[1:0]*32+:32] <= proc_wdata;
+                end else if (~lru[set] & dirty1[set]) begin
+                    mem_write  <= 1;
+                    mem_addr   <= {tag1[set],set};
+                    mem_wdata  <= data1[set];
+                end else if (lru[set] & dirty2[set]) begin
+                    mem_write  <= 1;
+                    mem_addr   <= {tag2[set],set};
+                    mem_wdata  <= data2[set];
+                end else begin
+                    mem_read   <= 1;
+                    mem_addr   <= proc_addr[29:2];
                 end
             end
-            else begin
-                for (i=0; i<8; i=i+1) block_next[i] = block[i];
-                proc_stall_w = proc_stall_r;
-                proc_rdata_w = proc_rdata_r;
-                buf_addr_w = proc_addr[29:2];
-                buf_wdata_w = buf_wdata_r;
-                buf_write_request_w = buf_write_request_r;
-                state_next = state;
-                buf_read = 1'b0;
-                buf_write = 1'b0;
-            end
+            if ((proc_read | proc_write) & (hit1 | hit2))
+                lru[set] <= hit1;
         end
-        S_MEM_READ: begin
-            if (~buf_stall) begin
-                for (i=0; i<8; i=i+1) block_next[i] = block[i];
-                buf_addr_w = proc_addr[29:2];
-                buf_wdata_w = buf_wdata_r;
-                buf_write_request_w = buf_write_request_r;
-
-                buf_read = 1'b0;
-                buf_write = 1'b0;
-                proc_rdata_w = buf_rdata_word;
-                proc_stall_w = 1'b0;
-                block_next[proc_index] = {1'b1, 1'b0, proc_tag, buf_rdata};
-                state_next = S_IDLE;
+        S_WBRD:
+            if (mem_ready) begin
+                mem_read   <= 1;
+                mem_write  <= 0;
+                mem_addr   <= proc_addr[29:2];
             end
-            else begin
-                for (i=0; i<8; i=i+1) block_next[i] = block[i];
-                proc_stall_w = proc_stall_r;
-                proc_rdata_w = proc_rdata_r;
-                buf_addr_w = proc_addr[29:2];
-                buf_wdata_w = buf_wdata_r;
-                buf_write_request_w = buf_write_request_r;
-                state_next = state;
-                buf_read = 1'b0;
-                buf_write = 1'b0;
-            end
-        end
-        S_MEM_READ_REPLACE: begin
-            if (~buf_stall) begin
-                if (~buf_write_request_r) begin
-                    for (i=0; i<8; i=i+1) block_next[i] = block[i];
-                    proc_rdata_w = proc_rdata_r;
-                    buf_addr_w = proc_addr[29:2];
-                    buf_wdata_w = buf_wdata_r;
-                    buf_write_request_w = buf_write_request_r;
-                    proc_stall_w = 1'b0;
-                    block_next[proc_index] = {1'b1, 1'b1, proc_tag, proc_replace_data};
-                    state_next = S_IDLE;
-
-                    buf_read = 1'b0;
-                    buf_write = 1'b0;
+        S_RD:
+            if (mem_ready) begin
+                mem_read   <= 0;
+                if (~lru[set]) begin
+                    valid1[set] <= 1;
+                    dirty1[set] <= 0;
+                    tag1  [set] <= proc_addr[29:4];
+                    data1 [set] <= mem_rdata;
+                end else begin
+                    valid2[set] <= 1;
+                    dirty2[set] <= 0;
+                    tag2  [set] <= proc_addr[29:4];
+                    data2 [set] <= mem_rdata;
                 end
-                else begin
-                    for (i=0; i<8; i=i+1) block_next[i] = block[i];
-                    proc_rdata_w = proc_rdata_r;
-                    buf_wdata_w = buf_wdata_r;
-                    proc_stall_w = 1'b0;
-                    block_next[proc_index] = {1'b1, 1'b1, proc_tag, proc_replace_data};
-                    state_next = S_IDLE;
-
-                    buf_write = 1'b1;
-                    buf_read = 1'b0;
-                    buf_addr_w = {proc_block_tag, proc_index};
-                    buf_write_request_w = 1'b0;
+            end  
+        S_WB:
+            if (mem_ready) begin
+                mem_read   <= 1;
+                mem_write  <= 0;
+            end
+        S_RDWB:
+            if (mem_ready) begin
+                mem_read   <= 0;
+                if (~lru[set]) begin
+                    valid1[set] <= 1;
+                    dirty1[set] <= 1;
+                    tag1  [set] <= proc_addr[29:4];
+                    data1 [set] <= mem_rdata;
+                end else begin
+                    valid2[set] <= 1;
+                    dirty2[set] <= 1;
+                    tag2  [set] <= proc_addr[29:4];
+                    data2 [set] <= mem_rdata;
                 end
             end
-            else begin
-                for (i=0; i<8; i=i+1) block_next[i] = block[i];
-                proc_stall_w = proc_stall_r;
-                proc_rdata_w = proc_rdata_r;
-                buf_addr_w = proc_addr[29:2];
-                buf_wdata_w = buf_wdata_r;
-                buf_write_request_w = buf_write_request_r;
-                state_next = state;
-                buf_read = 1'b0;
-                buf_write = 1'b0;
-            end
-        end
-        S_READ_WRITE: begin
-            if (~buf_stall) begin
-                for (i=0; i<8; i=i+1) block_next[i] = block[i];
-                buf_wdata_w = buf_wdata_r;
-                buf_write_request_w = buf_write_request_r;
-
-                buf_read = 1'b0;
-                buf_write = 1'b1;
-                buf_addr_w = {proc_block_tag, proc_index};
-                proc_rdata_w = buf_rdata_word;
-                proc_stall_w = 1'b0;
-                block_next[proc_index] = {1'b1, 1'b0, proc_tag, buf_rdata};
-                state_next = S_IDLE;
-            end
-            else begin
-                for (i=0; i<8; i=i+1) block_next[i] = block[i];
-                proc_stall_w = proc_stall_r;
-                proc_rdata_w = proc_rdata_r;
-                buf_addr_w = proc_addr[29:2];
-                buf_wdata_w = buf_wdata_r;
-                buf_write_request_w = buf_write_request_r;
-                state_next = state;
-                buf_read = 1'b0;
-                buf_write = 1'b0;
-            end
-        end
-        default: begin
-            for (i=0; i<8; i=i+1) block_next[i] = block[i];
-            proc_stall_w = proc_stall_r;
-            proc_rdata_w = proc_rdata_r;
-            buf_addr_w = proc_addr[29:2];
-            buf_wdata_w = buf_wdata_r;
-            buf_write_request_w = buf_write_request_r;
-            state_next = state;
-            buf_read = 1'b0;
-            buf_write = 1'b0;
-        end
         endcase
     end
+end
 
-//==== sequential circuit =================================
-    always @ (posedge clk or posedge proc_reset) begin
-        if(proc_reset) begin
-            for (i=0; i<8; i=i+1) block[i] <= 155'b0;
-            proc_stall_r <= 1'b0;
-            proc_rdata_r <= 32'b0;
-            buf_addr_r <= 28'b0;
-            buf_wdata_r <= 128'b0;
-            buf_write_request_r <= 1'b0;
-            state <= S_IDLE;
-        end
-        else begin
-            for (i=0; i<8; i=i+1) block[i] <= block_next[i];
-            proc_stall_r <= proc_stall_w;
-            proc_rdata_r <= proc_rdata_w;
-            buf_addr_r <= buf_addr_w;
-            buf_wdata_r <= buf_wdata_w;
-            buf_write_request_r <= buf_write_request_w;
-            state <= state_next;
-        end
-    end
-endmodule
-
-
-module buffer(
-    clk,
-    rst,
-    buf_addr,
-    buf_read,
-    buf_write,
-    buf_rdata,
-    buf_wdata,
-    buf_stall,
-    mem_addr,
-    mem_read,
-    mem_write,
-    mem_rdata,
-    mem_wdata,
-    mem_ready
-);
-    input          clk;
-    input          rst;
-    input   [27:0] buf_addr;
-    input          buf_read;
-    input          buf_write;
-    output [127:0] buf_rdata;
-    input  [127:0] buf_wdata;
-    output         buf_stall;
-    output  [27:0] mem_addr;
-    output         mem_read;
-    output         mem_write;
-    input  [127:0] mem_rdata;
-    output [127:0] mem_wdata;
-    input          mem_ready;
-
-//==== states =============================================
-    reg  [2:0] state, state_next;
-    parameter S_IDLE = 3'd0;
-    parameter S_WRITE = 3'd1;
-    parameter S_READ = 3'd2;
-
-//==== wire/reg definition ================================
-    reg  [127:0] buf_rdata_r, buf_rdata_w;
-    reg          buf_stall_r, buf_stall_w;
-    reg   [27:0] mem_addr_r, mem_addr_w;
-    reg          mem_read_r, mem_read_w;
-    reg          mem_write_r, mem_write_w;
-    reg  [127:0] mem_wdata_r, mem_wdata_w;
-
-//==== combinational circuit ==============================
-    assign buf_stall = buf_stall_r;
-    assign buf_rdata = buf_rdata_r;
-    assign mem_addr = mem_addr_r;
-    assign mem_read = mem_read_r;
-    assign mem_write = mem_write_r;
-    assign mem_wdata = mem_wdata_r;
-
-    always @ (*) begin
-        case (state)
-        S_IDLE: begin
-            if (buf_write) begin
-                buf_stall_w = 1'b1;
-                mem_write_w = 1'b1;
-                mem_addr_w = buf_addr;
-                mem_wdata_w = buf_wdata;
-                state_next = S_WRITE;
-
-                buf_rdata_w = buf_rdata_r;
-                mem_read_w = mem_read_r;
-            end
-            else if (buf_read) begin
-                buf_stall_w = 1'b1;
-                mem_read_w = 1'b1;
-                mem_addr_w = buf_addr;
-                state_next = S_READ;
-
-                buf_rdata_w = buf_rdata_r;
-                mem_write_w = mem_write_r;
-                mem_wdata_w = mem_wdata_r;
-            end
-            else begin
-                buf_rdata_w = buf_rdata_r;
-                buf_stall_w = buf_stall_r;
-                mem_addr_w = mem_addr_r;
-                mem_read_w = mem_read_r;
-                mem_write_w = mem_write_r;
-                mem_wdata_w = mem_wdata_r;
-                state_next = state;
-            end
-        end
-        S_WRITE: begin
-            if (mem_ready) begin
-                buf_stall_w = 1'b0;
-                mem_write_w = 1'b0;
-                state_next = S_IDLE;
-
-                buf_rdata_w = buf_rdata_r;
-                mem_addr_w = mem_addr_r;
-                mem_read_w = mem_read_r;
-                mem_wdata_w = mem_wdata_r;
-            end
-            else begin
-                buf_rdata_w = buf_rdata_r;
-                buf_stall_w = buf_stall_r;
-                mem_addr_w = mem_addr_r;
-                mem_read_w = mem_read_r;
-                mem_write_w = mem_write_r;
-                mem_wdata_w = mem_wdata_r;
-                state_next = state;
-            end
-        end
-        S_READ: begin
-            if (mem_ready) begin
-                buf_stall_w = 1'b0;
-                buf_rdata_w = mem_rdata;
-                mem_read_w = 1'b0;
-                state_next = S_IDLE;
-
-                mem_addr_w = mem_addr_r;
-                mem_write_w = mem_write_r;
-                mem_wdata_w = mem_wdata_r;
-            end
-            else begin
-                buf_rdata_w = buf_rdata_r;
-                buf_stall_w = buf_stall_r;
-                mem_addr_w = mem_addr_r;
-                mem_read_w = mem_read_r;
-                mem_write_w = mem_write_r;
-                mem_wdata_w = mem_wdata_r;
-                state_next = state;
-            end
-        end
-        default: begin
-            buf_rdata_w = buf_rdata_r;
-            buf_stall_w = buf_stall_r;
-            mem_addr_w = mem_addr_r;
-            mem_read_w = mem_read_r;
-            mem_write_w = mem_write_r;
-            mem_wdata_w = mem_wdata_r;
-            state_next = state;
-        end
-        endcase
-    end
-
-//==== sequential circuit =================================
-    always @ (posedge clk or posedge rst) begin
-        if (rst) begin
-            buf_rdata_r <= 128'b0;
-            buf_stall_r <= 1'b0;
-            mem_addr_r <= 28'b0;
-            mem_read_r <= 1'b0;
-            mem_write_r <= 1'b0;
-            mem_wdata_r <= 128'b0;
-            state <= S_IDLE;
-        end
-        else begin
-            buf_rdata_r <= buf_rdata_w;
-            buf_stall_r <= buf_stall_w;
-            mem_addr_r <= mem_addr_w;
-            mem_read_r <= mem_read_w;
-            mem_write_r <= mem_write_w;
-            mem_wdata_r <= mem_wdata_w;
-            state <= state_next;
-        end
-    end
 endmodule
