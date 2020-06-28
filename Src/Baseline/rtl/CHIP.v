@@ -147,17 +147,16 @@ module RISCV_Pipeline(
     reg             wen_IF_ID;
     reg             wen_ID_EX;
     reg             wen_EX_MEM;
-  //  wire            wen_MEM_WB;
-  //  assign  wen_MEM_WB = 1'b1;
+    wire            EX_memRead;
     wire            MEM_regWrite;
     reg      [1:0]  forward1, forward2;
     reg             forward_reg1, forward_reg2;
-    reg             stallEX, flush_IF_ID, flush_MEM_WB;
+    reg             flush_IF_ID, stallEX, flush_MEM_WB;
 
-// ================== IF =========================//
+//========================== IF ==========================//
     reg     [31:0]  PC;
-    reg    [31:0]  PCnxt;
-    
+    reg     [31:0]  PCnxt;
+
 always@(posedge clk) begin
     if (!rst_n)
         PC <= 32'd0;
@@ -167,23 +166,15 @@ always@(posedge clk) begin
     end
 end
 
-    wire    [31:0]  Instr_C, IF_Instr;
-    wire     [1:0]  PCoff;
+    wire    [31:0]  IF_Instr;
     wire    [31:0]  IF_PCpX;
-assign  ICACHE_addr = PC[31:2];
-// Read/Write Cycle Arrangement
 assign  ICACHE_ren  = 1'b1;
 assign  ICACHE_wen  = 1'b0;
-assign  Instr_C     = {ICACHE_rdata[7:0],ICACHE_rdata[15:8],ICACHE_rdata[23:16],ICACHE_rdata[31:24]}; //Little endian
-/* decomp  decIF(.o_str(IF_Instr),
-              .PCoff(PCoff),
-              .i_str(Instr_C),
-              .PCalign(PC[1])); */
-assign  IF_Instr    = Instr_C;
-assign  PCoff       = 2'b10;
-assign  IF_PCpX     = PC + {29'b0,PCoff,1'b0};
+assign  ICACHE_addr = PC[31:2];
+assign  IF_Instr    = {ICACHE_rdata[7:0],ICACHE_rdata[15:8],ICACHE_rdata[23:16],ICACHE_rdata[31:24]}; //Little endian
+assign  IF_PCpX     = PC + 32'd4;
 
-// ================  IF/ID registers =====================//
+//=================== IF/ID registers ====================//
     reg     [31:0]  ID_PC, ID_Instr, ID_PCpX;
 always@(posedge clk) begin
     if (!rst_n | flush_IF_ID) begin
@@ -192,20 +183,19 @@ always@(posedge clk) begin
     end
     else if (wen_IF_ID)
         {ID_PC, ID_Instr, ID_PCpX} <= {PC, IF_Instr, IF_PCpX};
-    
 end
 
-// ================== ID =========================//
+//========================== ID ==========================//
     reg     [10:0]  ctrl;
     wire    [10:0]  ID_ctrl;
     wire            c_regWrite;
     wire     [4:0]  ID_addR1, ID_addR2, ID_addRD;
     wire     [3:0]  ID_InstrALU;
-    reg     [31:0]  ID_R1, ID_R2, regist [1:31], ID_imm, ID_R1_temp, ID_R2_temp;
+    reg     [31:0]  ID_R1_temp, ID_R2_temp, ID_R1, ID_R2, regist [1:31], ID_imm;
     reg      [4:0]  WB_addRD;
     reg     [31:0]  WB_dataRD;
     wire    [31:0]  ID_PCpi;
-    wire    [31:0] branch_jump_address;
+    wire    [31:0]  branch_jump_address;
 
 assign  ID_addR1    = ID_Instr[19:15]; //Register 1
 assign  ID_addR2    = ID_Instr[24:20]; //Register 2
@@ -214,7 +204,7 @@ assign  ID_InstrALU = {ID_Instr[30],ID_Instr[14:12]}; //Identify ALU instruction
 
 //  Control Unit
 // (ALUsrc ALUop[1:0]) (branch jal jalr memRead memWrite) (regWrite memToReg[1:0])
-always@(*) begin // ctrlID TODO more instructions
+always@(*) begin // ctrlID
     case(ID_Instr[6:2]) // opcode
     5'b01100:
         ctrl = 11'b010_00000_100; // R
@@ -246,7 +236,6 @@ always@(*) begin // regID but have to forwarding due to 3 cycles
     ID_R2 = forward_reg2 ? WB_dataRD : ID_R2_temp;
 end
 
-
 always@(posedge clk) begin
     if (!rst_n)
         for (i=1;i<32;i=i+1)
@@ -273,9 +262,9 @@ always@(*) begin // immID
 end
 
 assign  ID_PCpi = ID_PC + ID_imm; // addID jal and branch
-assign branch_jump_address = ctrl[5] ? (ID_R1 + ID_imm) : ID_PCpi;
+assign  branch_jump_address = ctrl[5] ? (ID_R1 + ID_imm) : ID_PCpi;
 
-//================ ID/EX registers ==================//
+//=================== ID/EX registers ====================//
     reg     [10:0]  EX_ctrl;
     reg      [4:0]  EX_addR1, EX_addR2, EX_addRD;
     reg      [3:0]  EX_InstrALU, EX_Instru_temp;
@@ -285,25 +274,21 @@ always@(posedge clk) begin
         {EX_ctrl, EX_addR1, EX_addR2, EX_addRD, EX_Instru_temp, EX_PCpX, EX_PCpi, EX_R1, EX_R2, EX_imm} <= 90'b0;
     else if (wen_ID_EX)
         {EX_ctrl, EX_addR1, EX_addR2, EX_addRD, EX_Instru_temp, EX_PCpX, EX_PCpi, EX_R1, EX_R2, EX_imm,EX_Instr} <=
-        {ID_ctrl, ID_addR1, ID_addR2, ID_addRD, ID_InstrALU, ID_PCpX, ID_PCpi, ID_R1, ID_R2, ID_imm,ID_Instr}; 
+        {ID_ctrl, ID_addR1, ID_addR2, ID_addRD, ID_InstrALU, ID_PCpX, ID_PCpi, ID_R1, ID_R2, ID_imm,ID_Instr};
 end
     //ID_R1, ID_R2 is output of register
 
-//======================== EX ===========================//
+//========================== EX ==========================//
     wire            c_ALUsrc;
     wire     [1:0]  c_ALUop;
     wire     [4:0]  shamt;
     reg     [31:0]  ALUin1, ALUin2;
     reg      [3:0]  ALUctrl;
     reg     [31:0]  EX_ALUout;
-	wire	[31:0]	EX_noALUout; //modified by turknight
     reg     [31:0]  MEM_ALUout;
 
 assign  {c_ALUsrc, c_ALUop} = EX_ctrl[10:8];
-assign shamt = ALUin2[4:0];
-
-//modified by turknight
-assign EX_noALUout = EX_R2;
+assign  shamt = ALUin2[4:0];
 
 always@(*)begin
     if( EX_Instr[6:2] ==5'b00100 ) // I-type isn't determined by Instr[30] , but SRAI.
@@ -324,8 +309,7 @@ always@(*) begin // mux1EX
     endcase
 end
 always@(*) begin // mux2EX
-	case(c_ALUsrc ? 2'b11 : forward2)
-	//case(forward2)
+    case(c_ALUsrc ? 2'b11 : forward2)
     2'd0: ALUin2 = EX_R2;
     2'd1: ALUin2 = WB_dataRD;
     2'd2: ALUin2 = MEM_ALUout;
@@ -333,7 +317,7 @@ always@(*) begin // mux2EX
     endcase
 end
 
-always@(*) begin // ALUctrlEX TODO
+always@(*) begin // ALUctrlEX
     case(c_ALUop)
     2'b00:
         ALUctrl = 4'b0010;
@@ -351,16 +335,16 @@ always@(*) begin // ALUctrlEX TODO
             ALUctrl = 4'b0001; // or
         4'b0010:
             ALUctrl = 4'b0111; // slt
-	    4'b1100:
-	        ALUctrl = 4'b0011; // xori
+        4'b1100:
+            ALUctrl = 4'b0011; // xori
         4'b0100:
             ALUctrl = 4'b0011; // xori
-	    4'b0001:
-	        ALUctrl = 4'b0100; // SLL
-	    4'b0101:
-	        ALUctrl = 4'b0101; // SRL
-	    4'b1101:
-	        ALUctrl = 4'b1000; // SRA
+        4'b0001:
+            ALUctrl = 4'b0100; // SLL
+        4'b0101:
+            ALUctrl = 4'b0101; // SRL
+        4'b1101:
+            ALUctrl = 4'b1000; // SRA
         default:
             ALUctrl = 4'b0000;
         endcase
@@ -368,7 +352,7 @@ always@(*) begin // ALUctrlEX TODO
     endcase
 end
 
-always@(*) begin // ALU_EX TODO
+always@(*) begin // ALU_EX
     case(ALUctrl)
     4'b0010: // add
         EX_ALUout = ALUin1 + ALUin2;
@@ -379,34 +363,32 @@ always@(*) begin // ALU_EX TODO
     4'b0001: // or
         EX_ALUout = ALUin1 | ALUin2;
     4'b0111: // slt
-	    EX_ALUout = ( $signed( ALUin1 ) < $signed( ALUin2 ) ) ? 32'd1 : 32'd0;
+        EX_ALUout = ( $signed( ALUin1 ) < $signed( ALUin2 ) ) ? 32'd1 : 32'd0;
     4'b0011: // xor
         EX_ALUout = ALUin1 ^ ALUin2;
     4'b0100: // SLL
-	    EX_ALUout = ALUin1 << shamt;
+        EX_ALUout = ALUin1 << shamt;
     4'b0101: //SRL
-	    EX_ALUout = ALUin1 >> shamt;
+        EX_ALUout = ALUin1 >> shamt;
     4'b1000: //SRA
-	    EX_ALUout = $signed( ALUin1 ) >>> shamt;
+        EX_ALUout = $signed( ALUin1 ) >>> shamt;
     default:
         EX_ALUout = 32'd0;
     endcase
 end
 
-//================== EX/MEM registers =========================//
+//=================== EX/MEM registers ===================//
     reg      [7:0]  MEM_ctrl;
     reg      [4:0]  MEM_addRD;
-    reg     [31:0]  MEM_ALUin2, MEM_PCpx, MEM_Instru;
-    
+    reg     [31:0]  MEM_R2, MEM_PCpX, MEM_Instru;
 always@(posedge clk) begin
     if (!rst_n)
-        {MEM_ctrl, MEM_addRD, MEM_ALUin2, MEM_ALUout} <= 77'b0;
+        {MEM_ctrl, MEM_addRD, MEM_R2, MEM_ALUout} <= 77'b0;
     else if (wen_EX_MEM)
-        //{MEM_ctrl, MEM_addRD, MEM_ALUin2, MEM_ALUout} <= {EX_ctrl[7:0], EX_addRD, ALUin2, EX_ALUout};
-		{MEM_ctrl, MEM_addRD, MEM_ALUin2, MEM_ALUout, MEM_PCpx,MEM_Instru} <= {EX_ctrl[7:0], EX_addRD, EX_noALUout, EX_ALUout, EX_PCpX,EX_Instr};
+        {MEM_ctrl, MEM_addRD, MEM_R2, MEM_ALUout, MEM_PCpX, MEM_Instru} <= {EX_ctrl[7:0], EX_addRD, EX_R2, EX_ALUout, EX_PCpX, EX_Instr};
 end
 
-//==================== MEM ==================================//
+//========================= MEM ==========================//
     wire            c_branch, c_jal, c_jalr, c_memRead, c_memWrite;
     wire            ALUzero;
     wire            beq, PCsrc;
@@ -417,129 +399,103 @@ assign  ALUzero = (MEM_ALUout == 32'd0) ? 1'b1 : 1'b0;
 and     andEX(beq, c_branch, ALUzero);
 or      or_EX(PCsrc, beq, c_jal);
 
-//assign  PCnxt   = c_jalr ? MEM_ALUout : (PCsrc ? ID_PCpi : IF_PCpX); // PCpi PCpX propagate TODO
-
 assign  DCACHE_ren   = c_memRead;
 assign  DCACHE_wen   = c_memWrite;
 assign  DCACHE_addr  = MEM_ALUout[31:2];
-assign  DCACHE_wdata = {MEM_ALUin2[7:0],MEM_ALUin2[15:8],MEM_ALUin2[23:16],MEM_ALUin2[31:24]};
+assign  DCACHE_wdata = {MEM_R2[7:0],MEM_R2[15:8],MEM_R2[23:16],MEM_R2[31:24]};
 assign  MEM_D_data   = DCACHE_rdata;
 
-//===================== MEM/WB registers =======================//
+//=================== MEM/WB registers ===================//
     reg      [2:0]  WB_ctrl;
     reg     [31:0]  WB_ALUout, WB_D_data, WB_PCpX, WB_Instru;
 always@(posedge clk) begin
     if (!rst_n | flush_MEM_WB)
         {WB_ctrl, WB_addRD, WB_ALUout, WB_D_data} <= 72'b0;
-    else //if (wen_MEM_WB)
-        {WB_ctrl, WB_addRD, WB_ALUout, WB_D_data, WB_PCpX, WB_Instru} <= {MEM_ctrl[2:0], MEM_addRD, MEM_ALUout, MEM_D_data, MEM_PCpx, MEM_Instru};
+    else
+        {WB_ctrl, WB_addRD, WB_ALUout, WB_D_data, WB_PCpX, WB_Instru} <= {MEM_ctrl[2:0], MEM_addRD, MEM_ALUout, MEM_D_data, MEM_PCpX, MEM_Instru};
 end
 
-//======================== WB =============================//
+//========================== WB ==========================//
     wire     [1:0]  c_memToReg;
 assign  {c_regWrite, c_memToReg} = WB_ctrl;
+
 always@(*) begin // muxWB
     case(c_memToReg)
     2'd0: WB_dataRD = WB_ALUout;
     2'd1: WB_dataRD = {WB_D_data[7:0],WB_D_data[15:8],WB_D_data[23:16],WB_D_data[31:24]};
+    2'd3,
     2'd2: WB_dataRD = WB_PCpX;
-    2'd3: WB_dataRD = EX_PCpX; // jal jalr WB_PCpX propagate TODO
     endcase
 end
 
-// Data forwarding unit TODO
-reg [1:0] forward3, forward4;
+// Data forwarding unit
+wire    [31:0]  jalr_rs;
+wire    [31:0]  branch_r1;
+assign  jalr_rs     = (MEM_addRD == ID_addR1) ? MEM_ALUout : ID_R1;
+assign  branch_r1   = ( EX_addRD == ID_addR1) ?  EX_ALUout : ID_R1;
 
 assign  MEM_regWrite = MEM_ctrl[2];
 always@(*) begin
-    if (!rst_n)
-        {forward1, forward2} = 4'b0000;
-    {forward1, forward2} = 4'b0000;
-    {forward3, forward4, forward_reg1, forward_reg2} = 6'b000000;
+    {forward1, forward2, forward_reg1, forward_reg2} = 6'b000000;
     // 1. EX Data hazard
-    // MEM_regWrite MEM_addRD EX_addR1 EX_addR2
-    // forward1 forward2
-    if( MEM_regWrite && MEM_addRD!=0 && MEM_addRD == EX_addR1 ) 
+    if( MEM_regWrite && MEM_addRD!=0 && MEM_addRD == EX_addR1 )
         forward1 = 2'b10;
     if( MEM_regWrite && MEM_addRD!=0 && MEM_addRD == EX_addR2 )
         forward2 = 2'b10;
-    //if(MEM_Instru==WB_Instru)
+
     // 2. MEM Data hazard
-    // c_regWrite WB_addRD EX_addR1 EX_addR2
-    // forward1 forward2
-    if( c_regWrite     && WB_addRD!=0   && 
-        WB_addRD       == EX_addR1)begin
+    if(c_regWrite && WB_addRD!=0 && WB_addRD == EX_addR1 )
         forward1 = 2'b01;
-    end
-
-    if( c_regWrite     && WB_addRD!=0   && 
-        WB_addRD       == EX_addR2)begin
+    if(c_regWrite && WB_addRD!=0 && WB_addRD == EX_addR2 )
         forward2 = 2'b01;
-    end
 
-    if( ctrl[5] && MEM_addRD == ID_addR1 ) //jalr
-        forward3 = 2'b01;
-    
-
-    if( ctrl[7] && EX_addRD== ID_addR1 ) //beq or bne
-        forward4 = 2'b01;
-
-    // data write in register need one cycle, need forwarding     
+    // data write in register need one cycle, need forwarding
     if(c_regWrite && WB_addRD!=0 && WB_addRD == ID_addR1 )
-        forward_reg1 = 1;
-
+        forward_reg1 = 1'b1;
     if(c_regWrite && WB_addRD!=0 && WB_addRD == ID_addR2 )
-        forward_reg2 = 1;
+        forward_reg2 = 1'b1;
 end
-//====================== FSM ==========================//
-    reg     problem1; 
-    wire    Cache_stall;
-    wire    branch_jump;
-   
-    assign Cache_stall = ICACHE_stall | DCACHE_stall; // There will be some problem when each cache is stalled.
-    assign branch_jump = ctrl[6] | ctrl[5] | ctrl[7]; // ctrl[6] is jal, ctrl[5] is jalr, ctrl[7] is branch
+//========================= FSM ==========================//
     parameter  IDLE   = 1'b0;
     parameter  HAZARD = 1'b1;
-    reg  state, state_nxt;
+    reg     state, state_nxt;
+
+    wire    problem1;
+    wire    Cache_stall;
+    wire    branch_jump;
+
+    assign  problem1    = state;
+    assign  Cache_stall = ICACHE_stall | DCACHE_stall; // There will be some problem when each cache is stalled.
+    assign  branch_jump = ctrl[6] | ctrl[5] | ctrl[7]; // ctrl[6] is jal, ctrl[5] is jalr, ctrl[7] is branch
 
 always@(*)begin
     case(state)
         IDLE:begin
-            if( branch_jump && Cache_stall)
-                state_nxt <= HAZARD;
+            if( branch_jump && Cache_stall )
+                state_nxt = HAZARD;
             else
-                state_nxt <= IDLE;
+                state_nxt = IDLE;
         end
         HAZARD:begin
             if( !Cache_stall )
-                state_nxt <= IDLE;
+                state_nxt = IDLE;
             else
-                state_nxt <= HAZARD;
+                state_nxt = HAZARD;
         end
-        default:state_nxt <= IDLE;
-    endcase
-end
-
-always@(*)begin
-    case(state)
-        IDLE:   problem1 = 0;
-        HAZARD: problem1 = 1;
-        default:problem1 = 0;
     endcase
 end
 
 always@(posedge clk) begin
     if (!rst_n)
         state <= IDLE;
-    else begin
+    else
         state <= state_nxt;
-    end
 end
 
-//================ Store PCnxt Value=================//
- reg    [31:0] Pcnxt_temp, Pcnxt_temp_nxt;
+//================== Store PCnxt Value ===================//
+reg     [31:0]  Pcnxt_temp, Pcnxt_temp_nxt;
 
- always@(*)begin
+always@(*)begin
     if( branch_jump && Cache_stall )
         Pcnxt_temp_nxt = branch_jump_address;
     else
@@ -549,45 +505,34 @@ end
 always@(posedge clk) begin
     if (!rst_n)
         Pcnxt_temp <= 32'd0;
-    else begin
+    else
         Pcnxt_temp <= Pcnxt_temp_nxt;
-    end
 end
-//=================================================//
+//========================================================//
 
-wire [31:0] jalr_rs;
-wire [31:0] branch_r1;
-
-// Hazard detection / Pipeline stall unit TODO
-assign  EX_memRead = EX_ctrl[4];
-assign jalr_rs = (forward3==2'b01) ? MEM_ALUout : ID_R1;
-assign branch_r1 = (forward4==2'b01) ? EX_ALUout : ID_R1;
-
+// Hazard detection / Pipeline stall unit
+assign  EX_memRead  = EX_ctrl[4];
 always@(*) begin
     {wen_PC, wen_IF_ID, wen_ID_EX, wen_EX_MEM} = 4'b1111;
     {flush_IF_ID, stallEX, flush_MEM_WB} = 3'b000;
     PCnxt = IF_PCpX;
     // 1. Load-Use Data Hazard
-    // EX_memRead EX_addR1 EX_addR2 ID_addR1 ID_addR2
-    // wen_PC wen_IF_ID stallEX
     if( EX_memRead && ( EX_addRD==ID_addR1 || EX_addRD==ID_addR2 ) ) begin
-        wen_PC = 0;
-        wen_IF_ID = 0;
-        stallEX = 1;
+        wen_PC = 1'b0;
+        wen_IF_ID = 1'b0;
+        stallEX = 1'b1;
     end
-   
-    // 2. Branch Hazard
-    // ID_Instr
-    // flush_IF_ID
 
-    if( ctrl[6]) begin //jal
+    // 2. Branch Hazard
+
+    if( ctrl[6]) begin // jal
         PCnxt = ID_PCpi;
         flush_IF_ID = 1'b1;
-    end 
-   
-    if( ctrl[5] )begin //jalr
-        flush_IF_ID = 1'b1;
+    end
+
+    if( ctrl[5] )begin // jalr
         PCnxt = jalr_rs + ID_imm;
+        flush_IF_ID = 1'b1;
     end
 
     if( problem1 )begin
@@ -595,52 +540,16 @@ always@(*) begin
         flush_IF_ID = 1'b1;
     end
 
-    if( ctrl[7]&& ID_Instr[12] == 1'b1 )begin //bne
-        if( problem1 ) begin
-            if( branch_r1!=ID_R2 )begin
-                flush_IF_ID = 1'b1;
-                PCnxt = Pcnxt_temp;
-            end 
-            else begin
-                PCnxt = IF_PCpX;
-                flush_IF_ID = 1'b0;
-            end  
-        end       
+    if( ctrl[7] )begin // beq or bne
+        if( (branch_r1==ID_R2) ^ ID_Instr[12] )begin
+            PCnxt = problem1 ? Pcnxt_temp : ID_PCpi;
+            flush_IF_ID = 1'b1;
+        end
         else begin
-            if( branch_r1!=ID_R2 )begin
-                flush_IF_ID = 1'b1;
-                PCnxt = ID_PCpi;
-            end  
-            else begin
-                PCnxt = IF_PCpX;
-                flush_IF_ID = 1'b0;
-            end
-        end  
+            PCnxt = IF_PCpX;
+            flush_IF_ID = 1'b0;
+        end
     end
-
-    if( ctrl[7] && ID_Instr[12] == 1'b0 )begin //beq
-        if( problem1 ) begin
-            if( branch_r1==ID_R2 ) begin
-                flush_IF_ID = 1'b1;
-                PCnxt = Pcnxt_temp;
-            end 
-            else begin
-                PCnxt = IF_PCpX;
-                flush_IF_ID = 1'b0;
-            end
-        end        
-        else begin
-            if( branch_r1==ID_R2 )begin
-                PCnxt = ID_PCpi;
-                flush_IF_ID = 1'b1;
-            end
-            else begin
-                PCnxt = IF_PCpX;
-                flush_IF_ID = 1'b0;
-            end
-        end 
-    end
-    
 
     // 3. ICACHE stall
     if (ICACHE_stall) begin
@@ -648,16 +557,13 @@ always@(*) begin
         flush_IF_ID = 1'b1;
     end
     // 4. DCACHE stall
-    // DCACHE_stall
-    // wen_PC wen_IF_ID wen_ID_EX wen_EX_MEM flush_MEM_WB
-    if(DCACHE_stall) begin
+    if (DCACHE_stall) begin
         wen_PC = 1'b0;
         wen_IF_ID = 1'b0;
         wen_ID_EX = 1'b0;
         wen_EX_MEM = 1'b0;
-        flush_MEM_WB= 1'b1;
+        flush_MEM_WB = 1'b1;
     end
-   
 end
 endmodule
 
@@ -1284,4 +1190,3 @@ module buffer(
         end
     end
 endmodule
-
