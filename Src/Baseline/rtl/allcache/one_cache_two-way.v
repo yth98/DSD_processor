@@ -53,7 +53,7 @@ module cache(//4-set 32-word finished
     localparam S_RDWB = 3'd4;
 
 assign set = proc_addr[3:2];
-assign proc_stall = ~(hit1 | hit2);
+    assign proc_stall = (~(hit1 | hit2))&&(proc_read|proc_write);
 assign proc_rdata = proc_read & hit1
                   ? data1[set][proc_addr[1:0]*32+:32]
                   : proc_read & hit2
