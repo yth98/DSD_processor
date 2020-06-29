@@ -187,7 +187,7 @@ end
 
 //========================== ID ==========================//
     reg     [10:0]  ctrl;
-    wire    [10:0]  ID_ctrl;
+    wire     [7:0]  ID_ctrl;
     wire            c_regWrite;
     wire     [4:0]  ID_addR1, ID_addR2, ID_addRD;
     wire     [3:0]  ID_InstrALU;
@@ -195,37 +195,38 @@ end
     reg      [4:0]  WB_addRD;
     reg     [31:0]  WB_dataRD;
     wire    [31:0]  ID_PCpi;
-    wire    [31:0]  branch_jump_address;
 
 assign  ID_addR1    = ID_Instr[19:15]; //Register 1
 assign  ID_addR2    = ID_Instr[24:20]; //Register 2
 assign  ID_addRD    = ID_Instr[11: 7]; //Register Write
-assign  ID_InstrALU = {ID_Instr[30],ID_Instr[14:12]}; //Identify ALU instruction
+// I-type isn't determined by Instr[30] , but SRAI.
+assign  ID_InstrALU ={ID_Instr[6:2]==5'b00100 && ID_Instr[14:12]!=3'b101 ? 1'b0 : ID_Instr[30],
+                      ID_Instr[14:12]}; //Identify ALU instruction
 
 //  Control Unit
-// (ALUsrc ALUop[1:0]) (branch jal jalr memRead memWrite) (regWrite memToReg[1:0])
+// (branch jal jalr) (ALUsrc ALUop[1:0]) (memRead memWrite) (regWrite memToReg[1:0])
 always@(*) begin // ctrlID
     case(ID_Instr[6:2]) // opcode
     5'b01100:
-        ctrl = 11'b010_00000_100; // R
+        ctrl = 11'b000_010_00_100; // R
     5'b00100:
-        ctrl = 11'b110_00000_100; // I
+        ctrl = 11'b000_110_00_100; // I
     5'b11011:
-        ctrl = 11'b000_01000_110; // J jal
+        ctrl = 11'b010_000_00_110; // J jal
     5'b11001:
-        ctrl = 11'b100_00100_110; // I jalr
+        ctrl = 11'b001_100_00_110; // I jalr
     5'b11000:
-        ctrl = 11'b001_10000_000; // B beq ( at MEM stage )
+        ctrl = 11'b100_001_00_000; // B beq
     5'b01000:
-        ctrl = 11'b100_00001_000; // S sw
+        ctrl = 11'b000_100_01_000; // S sw
     5'b00000:
-        ctrl = 11'b100_00010_101; // I lw
+        ctrl = 11'b000_100_10_101; // I lw
     default:
-        ctrl = 11'b000_00000_000;
+        ctrl = 11'b000_000_00_000;
     endcase
 end
 
-assign  ID_ctrl = stallEX ? 11'b0 : ctrl; // muxID
+assign  ID_ctrl = stallEX ? 8'b0 : ctrl[7:0]; // muxID
 
 always@(*) begin // regID
     ID_R1_temp = (ID_addR1 != 5'd0) ? regist[ID_addR1] : 32'd0;
@@ -235,7 +236,6 @@ always@(*) begin // regID but have to forwarding due to 3 cycles
     ID_R1 = forward_reg1 ? WB_dataRD : ID_R1_temp;
     ID_R2 = forward_reg2 ? WB_dataRD : ID_R2_temp;
 end
-
 always@(posedge clk) begin
     if (!rst_n)
         for (i=1;i<32;i=i+1)
@@ -249,7 +249,7 @@ always@(*) begin // immID
     5'b00000,
     5'b00100,
     5'b11001:
-        ID_imm = {{21{ID_Instr[31]}},ID_Instr[30:21],ID_Instr[20]}; // I jalr
+        ID_imm = {{21{ID_Instr[31]}},ID_Instr[30:21],ID_Instr[20]}; // I
     5'b01000:
         ID_imm = {{21{ID_Instr[31]}},ID_Instr[30:25],ID_Instr[11:8],ID_Instr[7]}; // S
     5'b11000:
@@ -262,19 +262,18 @@ always@(*) begin // immID
 end
 
 assign  ID_PCpi = ID_PC + ID_imm; // addID jal and branch
-assign  branch_jump_address = ctrl[5] ? (ID_R1 + ID_imm) : ID_PCpi;
 
 //=================== ID/EX registers ====================//
-    reg     [10:0]  EX_ctrl;
+    reg      [7:0]  EX_ctrl;
     reg      [4:0]  EX_addR1, EX_addR2, EX_addRD;
-    reg      [3:0]  EX_InstrALU, EX_Instru_temp;
-    reg     [31:0]  EX_PCpX, EX_PCpi, EX_R1, EX_R2, EX_imm, EX_Instr;
+    reg      [3:0]  EX_InstrALU;
+    reg     [31:0]  EX_PCpX, EX_PCpi, EX_R1, EX_R2, EX_imm, EX_Instru;
 always@(posedge clk) begin
     if (!rst_n)
-        {EX_ctrl, EX_addR1, EX_addR2, EX_addRD, EX_Instru_temp, EX_PCpX, EX_PCpi, EX_R1, EX_R2, EX_imm} <= 90'b0;
+        {EX_ctrl, EX_addR1, EX_addR2, EX_addRD, EX_InstrALU, EX_PCpX, EX_PCpi, EX_R1, EX_R2, EX_imm} <= 187'b0;
     else if (wen_ID_EX)
-        {EX_ctrl, EX_addR1, EX_addR2, EX_addRD, EX_Instru_temp, EX_PCpX, EX_PCpi, EX_R1, EX_R2, EX_imm,EX_Instr} <=
-        {ID_ctrl, ID_addR1, ID_addR2, ID_addRD, ID_InstrALU, ID_PCpX, ID_PCpi, ID_R1, ID_R2, ID_imm,ID_Instr};
+        {EX_ctrl, EX_addR1, EX_addR2, EX_addRD, EX_InstrALU, EX_PCpX, EX_PCpi, EX_R1, EX_R2, EX_imm, EX_Instru} <=
+        {ID_ctrl, ID_addR1, ID_addR2, ID_addRD, ID_InstrALU, ID_PCpX, ID_PCpi, ID_R1, ID_R2, ID_imm, ID_Instr};
 end
     //ID_R1, ID_R2 is output of register
 
@@ -287,25 +286,15 @@ end
     reg     [31:0]  EX_ALUout;
     reg     [31:0]  MEM_ALUout;
 
-assign  {c_ALUsrc, c_ALUop} = EX_ctrl[10:8];
+assign  {c_ALUsrc, c_ALUop} = EX_ctrl[7:5];
 assign  shamt = ALUin2[4:0];
-
-always@(*)begin
-    if( EX_Instr[6:2] ==5'b00100 ) // I-type isn't determined by Instr[30] , but SRAI.
-        if( EX_Instru_temp == 4'b1101 ) //SRAI
-            EX_InstrALU = EX_Instru_temp;
-        else
-            EX_InstrALU = { 1'b0,EX_Instru_temp[2:0] };
-    else
-        EX_InstrALU = EX_Instru_temp;
-end
 
 always@(*) begin // mux1EX
     case(forward1)
     2'd0: ALUin1 = EX_R1;
     2'd1: ALUin1 = WB_dataRD;
+    2'd3,
     2'd2: ALUin1 = MEM_ALUout;
-    2'd3: ALUin1 = EX_R1;
     endcase
 end
 always@(*) begin // mux2EX
@@ -368,9 +357,9 @@ always@(*) begin // ALU_EX
         EX_ALUout = ALUin1 ^ ALUin2;
     4'b0100: // SLL
         EX_ALUout = ALUin1 << shamt;
-    4'b0101: //SRL
+    4'b0101: // SRL
         EX_ALUout = ALUin1 >> shamt;
-    4'b1000: //SRA
+    4'b1000: // SRA
         EX_ALUout = $signed( ALUin1 ) >>> shamt;
     default:
         EX_ALUout = 32'd0;
@@ -378,26 +367,20 @@ always@(*) begin // ALU_EX
 end
 
 //=================== EX/MEM registers ===================//
-    reg      [7:0]  MEM_ctrl;
+    reg      [4:0]  MEM_ctrl;
     reg      [4:0]  MEM_addRD;
     reg     [31:0]  MEM_R2, MEM_PCpX, MEM_Instru;
 always@(posedge clk) begin
     if (!rst_n)
-        {MEM_ctrl, MEM_addRD, MEM_R2, MEM_ALUout} <= 77'b0;
+        {MEM_ctrl, MEM_addRD, MEM_R2, MEM_ALUout} <= 74'b0;
     else if (wen_EX_MEM)
-        {MEM_ctrl, MEM_addRD, MEM_R2, MEM_ALUout, MEM_PCpX, MEM_Instru} <= {EX_ctrl[7:0], EX_addRD, EX_R2, EX_ALUout, EX_PCpX, EX_Instr};
+        {MEM_ctrl, MEM_addRD, MEM_R2, MEM_ALUout, MEM_PCpX, MEM_Instru} <= {EX_ctrl[4:0], EX_addRD, EX_R2, EX_ALUout, EX_PCpX, EX_Instru};
 end
 
 //========================= MEM ==========================//
-    wire            c_branch, c_jal, c_jalr, c_memRead, c_memWrite;
-    wire            ALUzero;
-    wire            beq, PCsrc;
+    wire            c_memRead, c_memWrite;
     wire    [31:0]  MEM_D_data;
-assign  {c_branch, c_jal, c_jalr, c_memRead, c_memWrite} = MEM_ctrl[7:3];
-
-assign  ALUzero = (MEM_ALUout == 32'd0) ? 1'b1 : 1'b0;
-and     andEX(beq, c_branch, ALUzero);
-or      or_EX(PCsrc, beq, c_jal);
+assign  {c_memRead, c_memWrite} = MEM_ctrl[4:3];
 
 assign  DCACHE_ren   = c_memRead;
 assign  DCACHE_wen   = c_memWrite;
@@ -429,25 +412,23 @@ always@(*) begin // muxWB
 end
 
 // Data forwarding unit
-wire    [31:0]  jalr_rs;
-wire    [31:0]  branch_r1;
-assign  jalr_rs     = (MEM_addRD == ID_addR1) ? MEM_ALUout : ID_R1;
-assign  branch_r1   = ( EX_addRD == ID_addR1) ?  EX_ALUout : ID_R1;
+    wire    [31:0]  jalr_R1     = (MEM_addRD == ID_addR1) ? MEM_ALUout : ID_R1;
+    wire    [31:0]  branch_R1   = ( EX_addRD == ID_addR1) ?  EX_ALUout : ID_R1;
 
 assign  MEM_regWrite = MEM_ctrl[2];
 always@(*) begin
     {forward1, forward2, forward_reg1, forward_reg2} = 6'b000000;
-    // 1. EX Data hazard
-    if( MEM_regWrite && MEM_addRD!=0 && MEM_addRD == EX_addR1 )
-        forward1 = 2'b10;
-    if( MEM_regWrite && MEM_addRD!=0 && MEM_addRD == EX_addR2 )
-        forward2 = 2'b10;
-
-    // 2. MEM Data hazard
+    // 1. MEM Data hazard
     if(c_regWrite && WB_addRD!=0 && WB_addRD == EX_addR1 )
         forward1 = 2'b01;
     if(c_regWrite && WB_addRD!=0 && WB_addRD == EX_addR2 )
         forward2 = 2'b01;
+
+    // 2. EX Data hazard
+    if( MEM_regWrite && MEM_addRD!=0 && MEM_addRD == EX_addR1 )
+        forward1 = 2'b10;
+    if( MEM_regWrite && MEM_addRD!=0 && MEM_addRD == EX_addR2 )
+        forward2 = 2'b10;
 
     // data write in register need one cycle, need forwarding
     if(c_regWrite && WB_addRD!=0 && WB_addRD == ID_addR1 )
@@ -460,13 +441,17 @@ end
     parameter  HAZARD = 1'b1;
     reg     state, state_nxt;
 
-    wire    problem1;
-    wire    Cache_stall;
-    wire    branch_jump;
+    wire            problem1;
+    wire            Cache_stall;
+    wire            b_taken;
+    wire            branch_jump;
+    wire    [31:0]  branch_jump_addr;
 
-    assign  problem1    = state;
-    assign  Cache_stall = ICACHE_stall | DCACHE_stall; // There will be some problem when each cache is stalled.
-    assign  branch_jump = ctrl[6] | ctrl[5] | ctrl[7]; // ctrl[6] is jal, ctrl[5] is jalr, ctrl[7] is branch
+assign  problem1    = state;
+assign  Cache_stall = ICACHE_stall | DCACHE_stall; // There will be some problem when each cache is stalled.
+assign  b_taken     = ctrl[10] & ((branch_R1==ID_R2) ^ ID_Instr[12]);
+assign  branch_jump = ctrl[9] | ctrl[8] | b_taken; // ctrl[9] is jal, ctrl[8] is jalr, b_taken is branch
+assign  branch_jump_addr = ctrl[8] ? (jalr_R1 + ID_imm) : ID_PCpi;
 
 always@(*)begin
     case(state)
@@ -497,7 +482,7 @@ reg     [31:0]  Pcnxt_temp, Pcnxt_temp_nxt;
 
 always@(*)begin
     if( branch_jump && Cache_stall )
-        Pcnxt_temp_nxt = branch_jump_address;
+        Pcnxt_temp_nxt = branch_jump_addr;
     else
         Pcnxt_temp_nxt = Pcnxt_temp;
 end
@@ -524,31 +509,14 @@ always@(*) begin
     end
 
     // 2. Branch Hazard
-
-    if( ctrl[6]) begin // jal
-        PCnxt = ID_PCpi;
-        flush_IF_ID = 1'b1;
-    end
-
-    if( ctrl[5] )begin // jalr
-        PCnxt = jalr_rs + ID_imm;
+    if( branch_jump )begin
+        PCnxt = branch_jump_addr;
         flush_IF_ID = 1'b1;
     end
 
     if( problem1 )begin
         PCnxt = Pcnxt_temp;
         flush_IF_ID = 1'b1;
-    end
-
-    if( ctrl[7] )begin // beq or bne
-        if( (branch_r1==ID_R2) ^ ID_Instr[12] )begin
-            PCnxt = problem1 ? Pcnxt_temp : ID_PCpi;
-            flush_IF_ID = 1'b1;
-        end
-        else begin
-            PCnxt = IF_PCpX;
-            flush_IF_ID = 1'b0;
-        end
     end
 
     // 3. ICACHE stall
@@ -622,7 +590,7 @@ module L2cache(
     localparam S_RDWB = 3'd4;
 
 assign set = proc_addr[3:2];
-assign proc_stall = (~(hit1 | hit2))&&(proc_read|proc_write);
+assign proc_stall = ~(hit1 | hit2) && (proc_read | proc_write);
 assign proc_rdata = proc_read & hit1
                   ? data1[set][proc_addr[1:0]*32+:32]
                   : proc_read & hit2
