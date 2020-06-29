@@ -196,7 +196,7 @@ end
 
 //========================== ID ==========================//
     reg     [10:0]  ctrl;
-    wire    [10:0]  ID_ctrl;
+    wire     [7:0]  ID_ctrl;
     wire            c_regWrite;
     wire     [4:0]  ID_addR1, ID_addR2, ID_addRD;
     wire     [3:0]  ID_InstrALU;
@@ -204,37 +204,38 @@ end
     reg      [4:0]  WB_addRD;
     reg     [31:0]  WB_dataRD;
     wire    [31:0]  ID_PCpi;
-    wire    [31:0]  branch_jump_address;
 
 assign  ID_addR1    = ID_Instr[19:15]; //Register 1
 assign  ID_addR2    = ID_Instr[24:20]; //Register 2
 assign  ID_addRD    = ID_Instr[11: 7]; //Register Write
-assign  ID_InstrALU = {ID_Instr[30],ID_Instr[14:12]}; //Identify ALU instruction
+// I-type isn't determined by Instr[30] , but SRAI.
+assign  ID_InstrALU ={ID_Instr[6:2]==5'b00100 && ID_Instr[14:12]!=3'b101 ? 1'b0 : ID_Instr[30],
+                      ID_Instr[14:12]}; //Identify ALU instruction
 
 //  Control Unit
-// (ALUsrc ALUop[1:0]) (branch jal jalr memRead memWrite) (regWrite memToReg[1:0])
+// (branch jal jalr) (ALUsrc ALUop[1:0]) (memRead memWrite) (regWrite memToReg[1:0])
 always@(*) begin // ctrlID
     case(ID_Instr[6:2]) // opcode
     5'b01100:
-        ctrl = 11'b010_00000_100; // R
+        ctrl = 11'b000_010_00_100; // R
     5'b00100:
-        ctrl = 11'b110_00000_100; // I
+        ctrl = 11'b000_110_00_100; // I
     5'b11011:
-        ctrl = 11'b000_01000_110; // J jal
+        ctrl = 11'b010_000_00_110; // J jal
     5'b11001:
-        ctrl = 11'b100_00100_110; // I jalr
+        ctrl = 11'b001_100_00_110; // I jalr
     5'b11000:
-        ctrl = 11'b001_10000_000; // B beq ( at MEM stage )
+        ctrl = 11'b100_001_00_000; // B beq
     5'b01000:
-        ctrl = 11'b100_00001_000; // S sw
+        ctrl = 11'b000_100_01_000; // S sw
     5'b00000:
-        ctrl = 11'b100_00010_101; // I lw
+        ctrl = 11'b000_100_10_101; // I lw
     default:
-        ctrl = 11'b000_00000_000;
+        ctrl = 11'b000_000_00_000;
     endcase
 end
 
-assign  ID_ctrl = stallEX ? 11'b0 : ctrl; // muxID
+assign  ID_ctrl = stallEX ? 8'b0 : ctrl[7:0]; // muxID
 
 always@(*) begin // regID
     ID_R1_temp = (ID_addR1 != 5'd0) ? regist[ID_addR1] : 32'd0;
@@ -244,7 +245,6 @@ always@(*) begin // regID but have to forwarding due to 3 cycles
     ID_R1 = forward_reg1 ? WB_dataRD : ID_R1_temp;
     ID_R2 = forward_reg2 ? WB_dataRD : ID_R2_temp;
 end
-
 always@(posedge clk) begin
     if (!rst_n)
         for (i=1;i<32;i=i+1)
@@ -258,7 +258,7 @@ always@(*) begin // immID
     5'b00000,
     5'b00100,
     5'b11001:
-        ID_imm = {{21{ID_Instr[31]}},ID_Instr[30:21],ID_Instr[20]}; // I jalr
+        ID_imm = {{21{ID_Instr[31]}},ID_Instr[30:21],ID_Instr[20]}; // I
     5'b01000:
         ID_imm = {{21{ID_Instr[31]}},ID_Instr[30:25],ID_Instr[11:8],ID_Instr[7]}; // S
     5'b11000:
@@ -270,23 +270,19 @@ always@(*) begin // immID
     endcase
 end
 
-wire    [31:0]  R1fwdID;
 assign  ID_PCpi = ID_PC + ID_imm; // addID jal and branch
-assign  branch_jump_address = ctrl[5] ? (R1fwdID + ID_imm) :
-                             (ctrl[7] & ((R1fwdID==ID_R2)^ID_Instr[12])) ? ID_PCpi :
-                             (ctrl[6]) ? ID_PCpi : ID_PCpX;
 
 //=================== ID/EX registers ====================//
-    reg     [10:0]  EX_ctrl;
+    reg      [7:0]  EX_ctrl;
     reg      [4:0]  EX_addR1, EX_addR2, EX_addRD;
-    reg      [3:0]  EX_InstrALU, EX_Instru_temp;
-    reg     [31:0]  EX_PCpX, EX_PCpi, EX_R1, EX_R2, EX_imm, EX_Instr;
+    reg      [3:0]  EX_InstrALU;
+    reg     [31:0]  EX_PCpX, EX_PCpi, EX_R1, EX_R2, EX_imm;
 always@(posedge clk) begin
     if (!rst_n)
-        {EX_ctrl, EX_addR1, EX_addR2, EX_addRD, EX_Instru_temp, EX_PCpX, EX_PCpi, EX_R1, EX_R2, EX_imm} <= 90'b0;
+        {EX_ctrl, EX_addR1, EX_addR2, EX_addRD, EX_InstrALU, EX_PCpX, EX_PCpi, EX_R1, EX_R2, EX_imm} <= 187'b0;
     else if (wen_ID_EX)
-        {EX_ctrl, EX_addR1, EX_addR2, EX_addRD, EX_Instru_temp, EX_PCpX, EX_PCpi, EX_R1, EX_R2, EX_imm,EX_Instr} <=
-        {ID_ctrl, ID_addR1, ID_addR2, ID_addRD, ID_InstrALU, ID_PCpX, ID_PCpi, ID_R1, ID_R2, ID_imm,ID_Instr};
+        {EX_ctrl, EX_addR1, EX_addR2, EX_addRD, EX_InstrALU, EX_PCpX, EX_PCpi, EX_R1, EX_R2, EX_imm} <=
+        {ID_ctrl, ID_addR1, ID_addR2, ID_addRD, ID_InstrALU, ID_PCpX, ID_PCpi, ID_R1, ID_R2, ID_imm};
 end
     //ID_R1, ID_R2 is output of register
 
@@ -294,24 +290,14 @@ end
     wire            c_ALUsrc;
     wire     [1:0]  c_ALUop;
     wire     [4:0]  shamt;
-    reg     [31:0]  ALUin1, FWDex2;
+    reg     [31:0]  ALUin1, R2fwdEX;
     wire    [31:0]  ALUin2;
     reg      [3:0]  ALUctrl;
     reg     [31:0]  EX_ALUout;
     reg     [31:0]  MEM_ALUout;
 
-assign  {c_ALUsrc, c_ALUop} = EX_ctrl[10:8];
+assign  {c_ALUsrc, c_ALUop} = EX_ctrl[7:5];
 assign  shamt = ALUin2[4:0];
-
-always@(*)begin
-    if( EX_Instr[6:2] ==5'b00100 ) // I-type isn't determined by Instr[30] , but SRAI.
-        if( EX_Instru_temp == 4'b1101 ) //SRAI
-            EX_InstrALU = EX_Instru_temp;
-        else
-            EX_InstrALU = { 1'b0,EX_Instru_temp[2:0] };
-    else
-        EX_InstrALU = EX_Instru_temp;
-end
 
 always@(*) begin // mux1EX
     case(forward1)
@@ -323,69 +309,45 @@ always@(*) begin // mux1EX
 end
 always@(*) begin // mux2EX
     case(forward2)
-    2'd0: FWDex2 = EX_R2;
-    2'd1: FWDex2 = WB_dataRD;
+    2'd0: R2fwdEX = EX_R2;
+    2'd1: R2fwdEX = WB_dataRD;
     2'd3,
-    2'd2: FWDex2 = MEM_ALUout;
+    2'd2: R2fwdEX = MEM_ALUout;
     endcase
 end
 
-assign  ALUin2 = c_ALUsrc ? EX_imm : FWDex2;
+assign  ALUin2 = c_ALUsrc ? EX_imm : R2fwdEX;
 
 always@(*) begin // ALUctrlEX
     case(c_ALUop)
     2'b00:
-        ALUctrl = 4'b0010;
+        ALUctrl = 4'b0000; // add
     2'b01:
-        ALUctrl = 4'b0110;
-    2'b10, 2'b11: begin
-        case(EX_InstrALU)
-        4'b0000:
-            ALUctrl = 4'b0010; // add
-        4'b1000:
-            ALUctrl = 4'b0110; // sub
-        4'b0111:
-            ALUctrl = 4'b0000; // and
-        4'b0110:
-            ALUctrl = 4'b0001; // or
-        4'b0010:
-            ALUctrl = 4'b0111; // slt
-        4'b1100:
-            ALUctrl = 4'b0011; // xori
-        4'b0100:
-            ALUctrl = 4'b0011; // xori
-        4'b0001:
-            ALUctrl = 4'b0100; // SLL
-        4'b0101:
-            ALUctrl = 4'b0101; // SRL
-        4'b1101:
-            ALUctrl = 4'b1000; // SRA
-        default:
-            ALUctrl = 4'b0000;
-        endcase
-      end
+        ALUctrl = 4'b1000; // sub
+    2'b10, 2'b11:
+        ALUctrl = EX_InstrALU;
     endcase
 end
 
 always@(*) begin // ALU_EX
     case(ALUctrl)
-    4'b0010: // add
+    4'b0000: // add
         EX_ALUout = ALUin1 + ALUin2;
-    4'b0110: // sub
+    4'b1000: // sub
         EX_ALUout = ALUin1 - ALUin2;
-    4'b0000: // and
+    4'b0111: // and
         EX_ALUout = ALUin1 & ALUin2;
-    4'b0001: // or
+    4'b0110: // or
         EX_ALUout = ALUin1 | ALUin2;
-    4'b0111: // slt
+    4'b0010: // slt
         EX_ALUout = ( $signed( ALUin1 ) < $signed( ALUin2 ) ) ? 32'd1 : 32'd0;
-    4'b0011: // xor
+    4'b0100: // xor
         EX_ALUout = ALUin1 ^ ALUin2;
-    4'b0100: // SLL
+    4'b0001: // SLL
         EX_ALUout = ALUin1 << shamt;
-    4'b0101: //SRL
+    4'b0101: // SRL
         EX_ALUout = ALUin1 >> shamt;
-    4'b1000: //SRA
+    4'b1101: // SRA
         EX_ALUout = $signed( ALUin1 ) >>> shamt;
     default:
         EX_ALUout = 32'd0;
@@ -393,20 +355,20 @@ always@(*) begin // ALU_EX
 end
 
 //=================== EX/MEM registers ===================//
-    reg      [7:0]  MEM_ctrl;
+    reg      [4:0]  MEM_ctrl;
     reg      [4:0]  MEM_addRD;
-    reg     [31:0]  MEM_R2, MEM_PCpX, MEM_Instru;
+    reg     [31:0]  MEM_R2, MEM_PCpX;
 always@(posedge clk) begin
     if (!rst_n)
-        {MEM_ctrl, MEM_addRD, MEM_R2, MEM_ALUout} <= 77'b0;
+        {MEM_ctrl, MEM_addRD, MEM_R2, MEM_ALUout} <= 74'b0;
     else if (wen_EX_MEM)
-        {MEM_ctrl, MEM_addRD, MEM_R2, MEM_ALUout, MEM_PCpX, MEM_Instru} <= {EX_ctrl[7:0], EX_addRD, FWDex2, EX_ALUout, EX_PCpX, EX_Instr};
+        {MEM_ctrl, MEM_addRD, MEM_R2, MEM_ALUout, MEM_PCpX} <= {EX_ctrl[4:0], EX_addRD, R2fwdEX, EX_ALUout, EX_PCpX};
 end
 
 //========================= MEM ==========================//
-    wire            c_branch, c_jal, c_jalr, c_memRead, c_memWrite;
+    wire            c_memRead, c_memWrite;
     wire    [31:0]  MEM_D_data;
-assign  {c_branch, c_jal, c_jalr, c_memRead, c_memWrite} = MEM_ctrl[7:3];
+assign  {c_memRead, c_memWrite} = MEM_ctrl[4:3];
 
 assign  DCACHE_ren   = c_memRead;
 assign  DCACHE_wen   = c_memWrite;
@@ -416,12 +378,12 @@ assign  MEM_D_data   = DCACHE_rdata;
 
 //=================== MEM/WB registers ===================//
     reg      [2:0]  WB_ctrl;
-    reg     [31:0]  WB_ALUout, WB_D_data, WB_PCpX, WB_Instru;
+    reg     [31:0]  WB_ALUout, WB_D_data, WB_PCpX;
 always@(posedge clk) begin
     if (!rst_n | flush_MEM_WB)
         {WB_ctrl, WB_addRD, WB_ALUout, WB_D_data} <= 72'b0;
     else
-        {WB_ctrl, WB_addRD, WB_ALUout, WB_D_data, WB_PCpX, WB_Instru} <= {MEM_ctrl[2:0], MEM_addRD, MEM_ALUout, MEM_D_data, MEM_PCpX, MEM_Instru};
+        {WB_ctrl, WB_addRD, WB_ALUout, WB_D_data, WB_PCpX} <= {MEM_ctrl[2:0], MEM_addRD, MEM_ALUout, MEM_D_data, MEM_PCpX};
 end
 
 //========================== WB ==========================//
@@ -438,6 +400,7 @@ always@(*) begin // muxWB
 end
 
 // Data forwarding unit
+    wire    [31:0]  R1fwdID;
 assign  R1fwdID =   ( EX_addRD == ID_addR1) ?  EX_ALUout :
                     (MEM_addRD == ID_addR1) ? MEM_ALUout :
                     ID_R1;
@@ -468,13 +431,17 @@ end
     parameter  HAZARD = 1'b1;
     reg     state, state_nxt;
 
-    wire    problem1;
-    wire    Cache_stall;
-    wire    branch_jump;
+    wire            problem1;
+    wire            Cache_stall;
+    wire            b_taken;
+    wire            branch_jump;
+    wire    [31:0]  branch_jump_addr;
 
-    assign  problem1    = state;
-    assign  Cache_stall = IC_stall | DCACHE_stall; // There will be some problem when each cache is stalled.
-    assign  branch_jump = ctrl[6] | ctrl[5] | ctrl[7]; // ctrl[6] is jal, ctrl[5] is jalr, ctrl[7] is branch
+assign  problem1    = state;
+assign  Cache_stall = IC_stall | DCACHE_stall; // There will be some problem when each cache is stalled.
+assign  b_taken     = ctrl[10] & ((R1fwdID==ID_R2) ^ ID_Instr[12]);
+assign  branch_jump = ctrl[9] | ctrl[8] | b_taken; // ctrl[9] is jal, ctrl[8] is jalr, b_taken is branch
+assign  branch_jump_addr = ctrl[8] ? (R1fwdID + ID_imm) : ID_PCpi;
 
 always@(*)begin
     case(state)
@@ -505,7 +472,7 @@ reg     [31:0]  Pcnxt_temp, Pcnxt_temp_nxt;
 
 always@(*)begin
     if( branch_jump && Cache_stall )
-        Pcnxt_temp_nxt = branch_jump_address;
+        Pcnxt_temp_nxt = branch_jump_addr;
     else
         Pcnxt_temp_nxt = Pcnxt_temp;
 end
@@ -532,31 +499,14 @@ always@(*) begin
     end
 
     // 2. Branch Hazard
-
-    if( ctrl[6]) begin // jal
-        PCnxt = ID_PCpi;
-        flush_IF_ID = 1'b1;
-    end
-
-    if( ctrl[5] )begin // jalr
-        PCnxt = R1fwdID + ID_imm;
+    if( branch_jump )begin
+        PCnxt = branch_jump_addr;
         flush_IF_ID = 1'b1;
     end
 
     if( problem1 )begin
         PCnxt = Pcnxt_temp;
         flush_IF_ID = 1'b1;
-    end
-
-    if( ctrl[7] )begin // beq or bne
-        if( (R1fwdID==ID_R2) ^ ID_Instr[12] )begin
-            PCnxt = problem1 ? Pcnxt_temp : ID_PCpi;
-            flush_IF_ID = 1'b1;
-        end
-        else begin
-            PCnxt = IF_PCpX;
-            flush_IF_ID = 1'b0;
-        end
     end
 
     // 3. ICACHE stall
@@ -632,7 +582,7 @@ module cache(
     localparam S_RDWB = 3'd4;
 
 assign set = proc_addr[3:2];
-assign proc_stall = ~(hit1 | hit2) & (proc_read | proc_write);
+assign proc_stall = ~(hit1 | hit2) && (proc_read | proc_write);
 assign proc_rdata = proc_read & hit1
                   ? data1[set][proc_addr[1:0]*32+:32]
                   : proc_read & hit2
@@ -642,7 +592,7 @@ assign hit1 = valid1[set] & (tag1[set] == proc_addr[29:4]);
 assign hit2 = valid2[set] & (tag2[set] == proc_addr[29:4]);
 
 always@(*) begin
-    case(state)
+    case (state)
     S_IDLE: begin
         if (hit1 | hit2)
             state_w = S_IDLE;
@@ -679,7 +629,7 @@ always@( posedge clk ) begin
     end
     else begin
         state   <= state_w;
-        case(state)
+        case (state)
         S_IDLE: begin
             if (proc_read) begin
                 if (proc_stall) begin
@@ -850,8 +800,8 @@ always@(*) begin
                         2'b01,C[9:7],
                         7'b0010011}; // C.andi
                 2'b11:
-                    case(C[6:5])
-                    /*2'b00:
+                    /*case(C[6:5])
+                    2'b00:
                         o_str ={7'b0100000,
                                 2'b01,C[4:2],
                                 2'b01,C[9:7],
@@ -872,9 +822,9 @@ always@(*) begin
                                 3'b111,
                                 2'b01,C[9:7],
                                 7'b0110011}; // C.and*/
-                    default:
+                    //default:
                         o_str = 32'd0;
-                    endcase
+                    //endcase
                 endcase
             end
             5'b11001:

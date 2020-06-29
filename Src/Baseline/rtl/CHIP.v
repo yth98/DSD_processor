@@ -267,13 +267,13 @@ assign  ID_PCpi = ID_PC + ID_imm; // addID jal and branch
     reg      [7:0]  EX_ctrl;
     reg      [4:0]  EX_addR1, EX_addR2, EX_addRD;
     reg      [3:0]  EX_InstrALU;
-    reg     [31:0]  EX_PCpX, EX_PCpi, EX_R1, EX_R2, EX_imm, EX_Instru;
+    reg     [31:0]  EX_PCpX, EX_PCpi, EX_R1, EX_R2, EX_imm;
 always@(posedge clk) begin
     if (!rst_n)
         {EX_ctrl, EX_addR1, EX_addR2, EX_addRD, EX_InstrALU, EX_PCpX, EX_PCpi, EX_R1, EX_R2, EX_imm} <= 187'b0;
     else if (wen_ID_EX)
-        {EX_ctrl, EX_addR1, EX_addR2, EX_addRD, EX_InstrALU, EX_PCpX, EX_PCpi, EX_R1, EX_R2, EX_imm, EX_Instru} <=
-        {ID_ctrl, ID_addR1, ID_addR2, ID_addRD, ID_InstrALU, ID_PCpX, ID_PCpi, ID_R1, ID_R2, ID_imm, ID_Instr};
+        {EX_ctrl, EX_addR1, EX_addR2, EX_addRD, EX_InstrALU, EX_PCpX, EX_PCpi, EX_R1, EX_R2, EX_imm} <=
+        {ID_ctrl, ID_addR1, ID_addR2, ID_addRD, ID_InstrALU, ID_PCpX, ID_PCpi, ID_R1, ID_R2, ID_imm};
 end
     //ID_R1, ID_R2 is output of register
 
@@ -309,57 +309,33 @@ end
 always@(*) begin // ALUctrlEX
     case(c_ALUop)
     2'b00:
-        ALUctrl = 4'b0010;
+        ALUctrl = 4'b0000; // add
     2'b01:
-        ALUctrl = 4'b0110;
-    2'b10, 2'b11: begin
-        case(EX_InstrALU)
-        4'b0000:
-            ALUctrl = 4'b0010; // add
-        4'b1000:
-            ALUctrl = 4'b0110; // sub
-        4'b0111:
-            ALUctrl = 4'b0000; // and
-        4'b0110:
-            ALUctrl = 4'b0001; // or
-        4'b0010:
-            ALUctrl = 4'b0111; // slt
-        4'b1100:
-            ALUctrl = 4'b0011; // xori
-        4'b0100:
-            ALUctrl = 4'b0011; // xori
-        4'b0001:
-            ALUctrl = 4'b0100; // SLL
-        4'b0101:
-            ALUctrl = 4'b0101; // SRL
-        4'b1101:
-            ALUctrl = 4'b1000; // SRA
-        default:
-            ALUctrl = 4'b0000;
-        endcase
-      end
+        ALUctrl = 4'b1000; // sub
+    2'b10, 2'b11:
+        ALUctrl = EX_InstrALU;
     endcase
 end
 
 always@(*) begin // ALU_EX
     case(ALUctrl)
-    4'b0010: // add
+    4'b0000: // add
         EX_ALUout = ALUin1 + ALUin2;
-    4'b0110: // sub
+    4'b1000: // sub
         EX_ALUout = ALUin1 - ALUin2;
-    4'b0000: // and
+    4'b0111: // and
         EX_ALUout = ALUin1 & ALUin2;
-    4'b0001: // or
+    4'b0110: // or
         EX_ALUout = ALUin1 | ALUin2;
-    4'b0111: // slt
+    4'b0010: // slt
         EX_ALUout = ( $signed( ALUin1 ) < $signed( ALUin2 ) ) ? 32'd1 : 32'd0;
-    4'b0011: // xor
+    4'b0100: // xor
         EX_ALUout = ALUin1 ^ ALUin2;
-    4'b0100: // SLL
+    4'b0001: // SLL
         EX_ALUout = ALUin1 << shamt;
     4'b0101: // SRL
         EX_ALUout = ALUin1 >> shamt;
-    4'b1000: // SRA
+    4'b1101: // SRA
         EX_ALUout = $signed( ALUin1 ) >>> shamt;
     default:
         EX_ALUout = 32'd0;
@@ -369,12 +345,12 @@ end
 //=================== EX/MEM registers ===================//
     reg      [4:0]  MEM_ctrl;
     reg      [4:0]  MEM_addRD;
-    reg     [31:0]  MEM_R2, MEM_PCpX, MEM_Instru;
+    reg     [31:0]  MEM_R2, MEM_PCpX;
 always@(posedge clk) begin
     if (!rst_n)
         {MEM_ctrl, MEM_addRD, MEM_R2, MEM_ALUout} <= 74'b0;
     else if (wen_EX_MEM)
-        {MEM_ctrl, MEM_addRD, MEM_R2, MEM_ALUout, MEM_PCpX, MEM_Instru} <= {EX_ctrl[4:0], EX_addRD, EX_R2, EX_ALUout, EX_PCpX, EX_Instru};
+        {MEM_ctrl, MEM_addRD, MEM_R2, MEM_ALUout, MEM_PCpX} <= {EX_ctrl[4:0], EX_addRD, EX_R2, EX_ALUout, EX_PCpX};
 end
 
 //========================= MEM ==========================//
@@ -390,12 +366,12 @@ assign  MEM_D_data   = DCACHE_rdata;
 
 //=================== MEM/WB registers ===================//
     reg      [2:0]  WB_ctrl;
-    reg     [31:0]  WB_ALUout, WB_D_data, WB_PCpX, WB_Instru;
+    reg     [31:0]  WB_ALUout, WB_D_data, WB_PCpX;
 always@(posedge clk) begin
     if (!rst_n | flush_MEM_WB)
         {WB_ctrl, WB_addRD, WB_ALUout, WB_D_data} <= 72'b0;
     else
-        {WB_ctrl, WB_addRD, WB_ALUout, WB_D_data, WB_PCpX, WB_Instru} <= {MEM_ctrl[2:0], MEM_addRD, MEM_ALUout, MEM_D_data, MEM_PCpX, MEM_Instru};
+        {WB_ctrl, WB_addRD, WB_ALUout, WB_D_data, WB_PCpX} <= {MEM_ctrl[2:0], MEM_addRD, MEM_ALUout, MEM_D_data, MEM_PCpX};
 end
 
 //========================== WB ==========================//

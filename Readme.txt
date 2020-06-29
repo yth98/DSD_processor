@@ -1,39 +1,30 @@
 # Digital System Design - Spring 2020
 # Pipelined RISC-V Design
 
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-Current status:6/25
-has passed no hazzard
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+---------------------------------
+Current status: 6/29
+Passed: noHazzard hasHazard BrPred decompression compression
+---------------------------------
 
-
-## Work pending:
+## Work:
 ### Baseline
-* [] Support 20 Instructions
+* [v] Support 20 Instructions
     - xor
-    - addi andi ori xori slli srai srli slti
-      (I-type 00100)
-    - bne 
-      (branch when rs1 - rs2 != 0)
-    - ALUctrlEX ALU_EX
-    - Jump instructions
-      PCpX / PCpi propagation
-* [] Caches
-    - DCACHE
-* [] Solve the hazards
+    - addi andi ori xori slli srai srli slti (I-type 00100)
+    - bne
+    - ALUctrlEX ALU_EXyy
+* [v] Caches
+* [v] Solve the hazards
     - Data forwarding unit
       EX hazard
       MEM hazard
     - Hazard detection / Pipeline stall unit
       Load-Use Data Hazard
       Branch Hazard
+      ICACHE stall
       DCACHE stall
-* [] Synthesis
+* [ ] Synthesis
 ### Extension
-* [] Branch Prediction
-* [] L2 Cache
-* [] Compressed Instructions
+* [v] Branch Prediction
+* [v] L2 Cache
+* [v] Compressed Instructions

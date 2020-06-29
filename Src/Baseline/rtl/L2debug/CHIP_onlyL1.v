@@ -407,57 +407,33 @@ end
 always@(*) begin // ALUctrlEX
     case(c_ALUop)
     2'b00:
-        ALUctrl = 4'b0010;
+        ALUctrl = 4'b0000; // add
     2'b01:
-        ALUctrl = 4'b0110;
-    2'b10, 2'b11: begin
-        case(EX_InstrALU)
-        4'b0000:
-            ALUctrl = 4'b0010; // add
-        4'b1000:
-            ALUctrl = 4'b0110; // sub
-        4'b0111:
-            ALUctrl = 4'b0000; // and
-        4'b0110:
-            ALUctrl = 4'b0001; // or
-        4'b0010:
-            ALUctrl = 4'b0111; // slt
-        4'b1100:
-            ALUctrl = 4'b0011; // xori
-        4'b0100:
-            ALUctrl = 4'b0011; // xori
-        4'b0001:
-            ALUctrl = 4'b0100; // SLL
-        4'b0101:
-            ALUctrl = 4'b0101; // SRL
-        4'b1101:
-            ALUctrl = 4'b1000; // SRA
-        default:
-            ALUctrl = 4'b0000;
-        endcase
-      end
+        ALUctrl = 4'b1000; // sub
+    2'b10, 2'b11:
+        ALUctrl = EX_InstrALU;
     endcase
 end
 
 always@(*) begin // ALU_EX
     case(ALUctrl)
-    4'b0010: // add
+    4'b0000: // add
         EX_ALUout = ALUin1 + ALUin2;
-    4'b0110: // sub
+    4'b1000: // sub
         EX_ALUout = ALUin1 - ALUin2;
-    4'b0000: // and
+    4'b0111: // and
         EX_ALUout = ALUin1 & ALUin2;
-    4'b0001: // or
+    4'b0110: // or
         EX_ALUout = ALUin1 | ALUin2;
-    4'b0111: // slt
+    4'b0010: // slt
         EX_ALUout = ( $signed( ALUin1 ) < $signed( ALUin2 ) ) ? 32'd1 : 32'd0;
-    4'b0011: // xor
+    4'b0100: // xor
         EX_ALUout = ALUin1 ^ ALUin2;
-    4'b0100: // SLL
+    4'b0001: // SLL
         EX_ALUout = ALUin1 << shamt;
     4'b0101: // SRL
         EX_ALUout = ALUin1 >> shamt;
-    4'b1000: // SRA
+    4'b1101: // SRA
         EX_ALUout = $signed( ALUin1 ) >>> shamt;
     default:
         EX_ALUout = 32'd0;
