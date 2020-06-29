@@ -138,6 +138,8 @@ module Final_tb;
 		rst_n = 1'b1;
 		#(`CYCLE*0.2) rst_n = 1'b0;
 		#(`CYCLE*8.5) rst_n = 1'b1;
+		// https://www.facebook.com/groups/476005556661334/permalink/566160247645864/?comment_id=579558172972738
+		$display("Pull up rst_n [Timing violations before can be ignored] (Cycle %0.3f ns)", `CYCLE);
      
 		#(`CYCLE*10000) // calculate clock cycles for all operation (you can modify it)
 		$display("============================================================================");

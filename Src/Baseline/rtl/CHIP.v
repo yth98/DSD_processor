@@ -86,7 +86,7 @@ wire [31:0] DCACHE_rdata;
     );
     
 
-    L2cache D_cache(
+	cache D_cache(
         .clk        (clk)         ,
         .proc_reset (~rst_n)      ,
         .proc_read  (DCACHE_ren)  ,
@@ -103,7 +103,7 @@ wire [31:0] DCACHE_rdata;
         .mem_ready  (mem_ready_D)
     );
 
-    L2cache I_cache(
+	cache I_cache(
         .clk        (clk)         ,
         .proc_reset (~rst_n)      ,
         .proc_read  (ICACHE_ren)  ,
@@ -511,7 +511,7 @@ always@(*) begin
 end
 endmodule
 
-module L2cache(
+module cache(
     clk,
     proc_reset,
     proc_read,

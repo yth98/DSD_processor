@@ -1,0 +1,61 @@
+[Baseline]
+set cycle  4
+set_clock_uncertainty            0.2  [get_clocks CLK]
+  --------------------------------------------------------------------------
+  data required time                                                 4.21
+  data arrival time                                                 -4.21
+  --------------------------------------------------------------------------
+  slack (MET)                                                        0.00
+
+Number of ports:                         2166
+Number of nets:                         17684
+Number of cells:                        15891
+Number of combinational cells:          11335
+Number of sequential cells:              4547
+Number of macros/black boxes:               0
+Number of buf/inv:                       3239
+Number of references:                       6
+
+Combinational area:             119907.729549
+Buf/Inv area:                    25937.969602
+Noncombinational area:          142338.875189
+Macro/Black Box area:                0.000000
+Net Interconnect area:         2075370.687469
+
+Total cell area:                262246.604738
+Total area:                    2337617.292207
+
+`define CYCLE 5.4
+noHazard Simulation complete via $finish(1) at time 785700 PS + 0
+hasHazard Simulation complete via $finish(1) at time 9738900 PS + 0
+
+[Compression]
+set cycle  4
+set_clock_uncertainty            0.2  [get_clocks CLK]
+  --------------------------------------------------------------------------
+  data required time                                                 4.14
+  data arrival time                                                 -4.14
+  --------------------------------------------------------------------------
+  slack (MET)                                                        0.00
+
+Number of ports:                         2358
+Number of nets:                         19499
+Number of cells:                        17546
+Number of combinational cells:          13100
+Number of sequential cells:              4435
+Number of macros/black boxes:               0
+Number of buf/inv:                       3444
+Number of references:                       7
+
+Combinational area:             146061.268593
+Buf/Inv area:                    29324.282449
+Noncombinational area:          139331.082193
+Macro/Black Box area:                0.000000
+Net Interconnect area:         2243184.877167
+
+Total cell area:                285392.350786
+Total area:                    2528577.227953
+
+`define CYCLE 4.8
+decompression Simulation complete via $finish(1) at time 2148 NS + 0
+compression Simulation complete via $finish(1) at time 2080800 PS + 0
