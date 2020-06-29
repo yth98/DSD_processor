@@ -3,7 +3,10 @@
 
 ---------------------------------
 Current status: 6/29
-Passed: noHazzard hasHazard BrPred decompression compression
+Passed: noHazzard hasHazard (47 >= nb >= 3)
+        BrPred decompression compression
+TODO:   Synthesize everything again and update AT_report.txt
+        Report and Presentation slide (doesn't need to upload to GitHub)
 ---------------------------------
 
 ## Work:

@@ -86,7 +86,7 @@ wire [31:0] DCACHE_rdata;
     );
     
 
-    cache D_cache(
+	cache_D D_cache(
         .clk        (clk)         ,
         .proc_reset (~rst_n)      ,
         .proc_read  (DCACHE_ren)  ,
@@ -103,7 +103,7 @@ wire [31:0] DCACHE_rdata;
         .mem_ready  (mem_ready_D)
     );
 
-    cache I_cache(
+	cache_I I_cache(
         .clk        (clk)         ,
         .proc_reset (~rst_n)      ,
         .proc_read  (ICACHE_ren)  ,
@@ -147,11 +147,12 @@ module RISCV_Pipeline(
     reg             wen_IF_ID;
     reg             wen_ID_EX;
     reg             wen_EX_MEM;
+    reg             wen_MEM_WB;
     wire            EX_memRead;
     wire            MEM_regWrite;
     reg      [1:0]  forward1, forward2;
     reg             forward_reg1, forward_reg2;
-    reg             flush_IF_ID, stallEX, flush_MEM_WB;
+    reg             flush_IF_ID, stallEX;
 
 //========================== IF ==========================//
     reg     [31:0]  PC;
@@ -380,9 +381,9 @@ assign  MEM_D_data   = DCACHE_rdata;
     reg      [2:0]  WB_ctrl;
     reg     [31:0]  WB_ALUout, WB_D_data, WB_PCpX;
 always@(posedge clk) begin
-    if (!rst_n | flush_MEM_WB)
+    if (!rst_n)
         {WB_ctrl, WB_addRD, WB_ALUout, WB_D_data} <= 72'b0;
-    else
+    else if (wen_MEM_WB)
         {WB_ctrl, WB_addRD, WB_ALUout, WB_D_data, WB_PCpX} <= {MEM_ctrl[2:0], MEM_addRD, MEM_ALUout, MEM_D_data, MEM_PCpX};
 end
 
@@ -488,8 +489,8 @@ end
 // Hazard detection / Pipeline stall unit
 assign  EX_memRead  = EX_ctrl[4];
 always@(*) begin
-    {wen_PC, wen_IF_ID, wen_ID_EX, wen_EX_MEM} = 4'b1111;
-    {flush_IF_ID, stallEX, flush_MEM_WB} = 3'b000;
+    {wen_PC, wen_IF_ID, wen_ID_EX, wen_EX_MEM, wen_MEM_WB} = 5'b11111;
+    {flush_IF_ID, stallEX} = 2'b00;
     PCnxt = IF_PCpX;
     // 1. Load-Use Data Hazard
     if( EX_memRead && ( EX_addRD==ID_addR1 || EX_addRD==ID_addR2 ) ) begin
@@ -520,14 +521,12 @@ always@(*) begin
         wen_IF_ID = 1'b0;
         wen_ID_EX = 1'b0;
         wen_EX_MEM = 1'b0;
-        flush_MEM_WB = 1'b1;
+        wen_MEM_WB = 1'b0;
     end
 end
 endmodule
 
-
-
-module cache(
+module cache_D(
     clk,
     proc_reset,
     proc_read,
@@ -543,7 +542,7 @@ module cache(
     mem_wdata,
     mem_ready
 );
-    
+
 //==== input/output definition ============================
     input          clk;
     // processor interface
@@ -559,58 +558,45 @@ module cache(
     output         mem_read, mem_write;
     output  [27:0] mem_addr;
     output [127:0] mem_wdata;
-    
+
 //==== wire/reg definition ================================
     reg            mem_read, mem_write;
     reg     [27:0] mem_addr;
     reg    [127:0] mem_wdata;
 
-    reg      [2:0] state_w;
-    reg      [2:0] state;
+    reg      [1:0] state_w;
+    reg      [1:0] state;
     reg      [3:0] valid1, valid2;
     reg      [3:0] dirty1, dirty2;
+    reg            be_dirty;
     reg      [3:0] lru;             // 0:data1 1:data2
     reg     [29:4] tag1    [0:3], tag2    [0:3];
     reg    [127:0] data1   [0:3], data2   [0:3];
     wire           hit1, hit2;
-    wire     [3:2] set;
+    wire     [3:2] set = proc_addr[3:2];
 //==== combinational circuit ==============================
-    localparam S_IDLE = 3'd0;
-    localparam S_WBRD = 3'd1;
-    localparam S_RD   = 3'd2;
-    localparam S_WB   = 3'd3;
-    localparam S_RDWB = 3'd4;
+    localparam S_IDLE = 2'd0;
+    localparam S_WB   = 2'd3;
+    localparam S_RD   = 2'd2;
 
-assign set = proc_addr[3:2];
 assign proc_stall = ~(hit1 | hit2) && (proc_read | proc_write);
-assign proc_rdata = proc_read & hit1
+assign proc_rdata = hit1
                   ? data1[set][proc_addr[1:0]*32+:32]
-                  : proc_read & hit2
-                  ? data2[set][proc_addr[1:0]*32+:32]
-                  : 32'd0;
+                  : data2[set][proc_addr[1:0]*32+:32];
 assign hit1 = valid1[set] & (tag1[set] == proc_addr[29:4]);
 assign hit2 = valid2[set] & (tag2[set] == proc_addr[29:4]);
 
 always@(*) begin
     case (state)
-    S_IDLE: begin
-        if (hit1 | hit2)
-            state_w = S_IDLE;
-        else if (proc_read)
-            state_w = (~lru[set] & dirty1[set] | lru[set] & dirty2[set]) ? S_WBRD : S_RD;
-        else if (proc_write)
-            state_w = (~lru[set] & dirty1[set] | lru[set] & dirty2[set]) ? S_WB : S_RDWB;
+    S_IDLE:
+        if (proc_stall)
+            state_w = (~lru[set] & dirty1[set] | lru[set] & dirty2[set]) ? S_WB : S_RD;
         else
             state_w = S_IDLE;
-    end
-    S_WBRD:
-        state_w = mem_ready ? S_RD : S_WBRD;
+    S_WB:
+        state_w = mem_ready ? S_RD : S_WB;
     S_RD:
         state_w = mem_ready ? S_IDLE : S_RD;
-    S_WB:
-        state_w = mem_ready ? S_RDWB : S_WB;
-    S_RDWB:
-        state_w = mem_ready ? S_IDLE : S_RDWB;
     default:
         state_w = S_IDLE;
     endcase
@@ -629,22 +615,21 @@ always@( posedge clk ) begin
     end
     else begin
         state   <= state_w;
+        be_dirty<= (proc_read) ? 1'b0 : (proc_write) ? 1'b1 : be_dirty;
         case (state)
         S_IDLE: begin
-            if (proc_read) begin
-                if (proc_stall) begin
-                    if (~lru[set] & dirty1[set]) begin
-                        mem_write  <= 1;
-                        mem_addr   <= {tag1[set],set};
-                        mem_wdata  <= data1[set];
-                    end else if (lru[set] & dirty2[set]) begin
-                        mem_write  <= 1;
-                        mem_addr   <= {tag2[set],set};
-                        mem_wdata  <= data2[set];
-                    end else begin
-                        mem_read   <= 1;
-                        mem_addr   <= proc_addr[29:2];
-                    end
+            if (proc_read && ~(hit1 | hit2)) begin
+                if (~lru[set] & dirty1[set]) begin
+                    mem_write  <= 1;
+                    mem_addr   <= {tag1[set],set};
+                    mem_wdata  <= data1[set];
+                end else if (lru[set] & dirty2[set]) begin
+                    mem_write  <= 1;
+                    mem_addr   <= {tag2[set],set};
+                    mem_wdata  <= data2[set];
+                end else begin
+                    mem_read   <= 1;
+                    mem_addr   <= proc_addr[29:2];
                 end
             end
             else if (proc_write) begin
@@ -670,7 +655,7 @@ always@( posedge clk ) begin
             if ((proc_read | proc_write) & (hit1 | hit2))
                 lru[set] <= hit1;
         end
-        S_WBRD:
+        S_WB:
             if (mem_ready) begin
                 mem_read   <= 1;
                 mem_write  <= 0;
@@ -681,32 +666,12 @@ always@( posedge clk ) begin
                 mem_read   <= 0;
                 if (~lru[set]) begin
                     valid1[set] <= 1;
-                    dirty1[set] <= 0;
+                    dirty1[set] <= be_dirty;
                     tag1  [set] <= proc_addr[29:4];
                     data1 [set] <= mem_rdata;
                 end else begin
                     valid2[set] <= 1;
-                    dirty2[set] <= 0;
-                    tag2  [set] <= proc_addr[29:4];
-                    data2 [set] <= mem_rdata;
-                end
-            end
-        S_WB:
-            if (mem_ready) begin
-                mem_read   <= 1;
-                mem_write  <= 0;
-            end
-        S_RDWB:
-            if (mem_ready) begin
-                mem_read   <= 0;
-                if (~lru[set]) begin
-                    valid1[set] <= 1;
-                    dirty1[set] <= 1;
-                    tag1  [set] <= proc_addr[29:4];
-                    data1 [set] <= mem_rdata;
-                end else begin
-                    valid2[set] <= 1;
-                    dirty2[set] <= 1;
+                    dirty2[set] <= be_dirty;
                     tag2  [set] <= proc_addr[29:4];
                     data2 [set] <= mem_rdata;
                 end
@@ -716,7 +681,109 @@ always@( posedge clk ) begin
 end
 endmodule
 
+module cache_I(
+    clk,
+    proc_reset,
+    proc_read,
+    proc_write,
+    proc_addr,
+    proc_rdata,
+    proc_wdata,
+    proc_stall,
+    mem_read,
+    mem_write,
+    mem_addr,
+    mem_rdata,
+    mem_wdata,
+    mem_ready
+);
 
+//==== input/output definition ============================
+    input          clk;
+    // processor interface
+    input          proc_reset;
+    input          proc_read, proc_write;
+    input   [29:0] proc_addr;
+    input   [31:0] proc_wdata;
+    output         proc_stall;
+    output  [31:0] proc_rdata;
+    // memory interface
+    input  [127:0] mem_rdata;
+    input          mem_ready;
+    output         mem_read, mem_write;
+    output  [27:0] mem_addr;
+    output [127:0] mem_wdata;
+
+//==== wire/reg definition ================================
+    reg            mem_read;
+    reg     [27:0] mem_addr;
+    reg    [127:0] mem_wdata;
+
+    reg            state_w;
+    reg            state;
+    reg      [3:0] valid1, valid2;
+    reg      [3:0] lru;             // 0:data1 1:data2
+    reg     [29:4] tag1    [0:3], tag2    [0:3];
+    reg    [127:0] data1   [0:3], data2   [0:3];
+    wire           hit1, hit2;
+    wire     [3:2] set = proc_addr[3:2];
+//==== combinational circuit ==============================
+    localparam S_IDLE = 1'b0;
+    localparam S_RD   = 1'b1;
+
+assign proc_stall = ~(hit1 | hit2) && proc_read;
+assign proc_rdata = hit1
+                  ? data1[set][proc_addr[1:0]*32+:32]
+                  : data2[set][proc_addr[1:0]*32+:32];
+assign mem_write = 1'b0;
+assign hit1 = valid1[set] & (tag1[set] == proc_addr[29:4]);
+assign hit2 = valid2[set] & (tag2[set] == proc_addr[29:4]);
+
+always@(*) begin
+    case (state)
+    S_IDLE:
+        state_w = proc_stall;
+    S_RD:
+        state_w = ~mem_ready;
+    endcase
+end
+//==== sequential circuit =================================
+always@( posedge clk ) begin
+    if( proc_reset ) begin
+        mem_read   <= 0;
+        state   <= S_IDLE;
+        valid1  <= 4'b0;
+        valid2  <= 4'b0;
+        lru     <= 4'b0;
+    end
+    else begin
+        state   <= state_w;
+        case (state)
+        S_IDLE: begin
+            if (proc_stall) begin
+                mem_read   <= 1;
+                mem_addr   <= proc_addr[29:2];
+            end
+            if (proc_read & (hit1 | hit2))
+                lru[set] <= hit1;
+        end
+        S_RD:
+            if (mem_ready) begin
+                mem_read   <= 0;
+                if (~lru[set]) begin
+                    valid1[set] <= 1;
+                    tag1  [set] <= proc_addr[29:4];
+                    data1 [set] <= mem_rdata;
+                end else begin
+                    valid2[set] <= 1;
+                    tag2  [set] <= proc_addr[29:4];
+                    data2 [set] <= mem_rdata;
+                end
+            end
+        endcase
+    end
+end
+endmodule
 
 module decomp(
     output  reg  [31:0] o_str,
