@@ -349,7 +349,7 @@ end
     reg     [31:0]  MEM_R2, MEM_PCpX;
 always@(posedge clk) begin
     if (!rst_n)
-        {MEM_ctrl, MEM_addRD, MEM_R2, MEM_ALUout, MEM_PCpX} <= 106'b0;
+        {MEM_ctrl, MEM_addRD, MEM_R2, MEM_ALUout} <= 74'b0;
     else if (wen_EX_MEM)
         {MEM_ctrl, MEM_addRD, MEM_R2, MEM_ALUout, MEM_PCpX} <= {EX_ctrl[4:0], EX_addRD, EX_R2, EX_ALUout, EX_PCpX};
 end
@@ -370,7 +370,7 @@ assign  MEM_D_data   = DCACHE_rdata;
     reg     [31:0]  WB_ALUout, WB_D_data, WB_PCpX;
 always@(posedge clk) begin
     if (!rst_n)
-        {WB_ctrl, WB_addRD, WB_ALUout, WB_D_data, WB_PCpX} <= 104'b0;
+        {WB_ctrl, WB_addRD, WB_ALUout, WB_D_data} <= 72'b0;
     else if (wen_MEM_WB)
         {WB_ctrl, WB_addRD, WB_ALUout, WB_D_data, WB_PCpX} <= {MEM_ctrl[2:0], MEM_addRD, MEM_ALUout, MEM_D_data, MEM_PCpX};
 end
@@ -393,23 +393,28 @@ end
     wire    [31:0]  branch_R1   = ( EX_addRD == ID_addR1) ?  EX_ALUout : ID_R1;
 
 assign  MEM_regWrite = MEM_ctrl[2];
-always@(*) begin
-    {forward1, forward2, forward_reg1, forward_reg2} = 6'b000000;
-    // 1. MEM Data hazard
+
+always@(*)begin
+    forward1 = 2'b00;
     if(c_regWrite && WB_addRD!=0 && WB_addRD == EX_addR1 )
         forward1 = 2'b01;
-    if(c_regWrite && WB_addRD!=0 && WB_addRD == EX_addR2 )
-        forward2 = 2'b01;
-
-    // 2. EX Data hazard
     if( MEM_regWrite && MEM_addRD!=0 && MEM_addRD == EX_addR1 )
         forward1 = 2'b10;
+end
+always@(*)begin
+    forward2 = 2'b00;
+    if(c_regWrite && WB_addRD!=0 && WB_addRD == EX_addR2 )
+        forward2 = 2'b01;
     if( MEM_regWrite && MEM_addRD!=0 && MEM_addRD == EX_addR2 )
         forward2 = 2'b10;
-
-    // data write in register need one cycle, need forwarding
+end
+always@(*)begin
+    forward_reg1 = 0;
     if(c_regWrite && WB_addRD!=0 && WB_addRD == ID_addR1 )
         forward_reg1 = 1'b1;
+end
+always@(*)begin
+    forward_reg2 = 0;
     if(c_regWrite && WB_addRD!=0 && WB_addRD == ID_addR2 )
         forward_reg2 = 1'b1;
 end
