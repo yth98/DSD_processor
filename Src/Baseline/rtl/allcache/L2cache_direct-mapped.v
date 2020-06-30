@@ -1,4 +1,4 @@
-module L2cache(//64-block 256words
+module L2cache(//32-block 128words
     clk,
     proc_reset,
     proc_read,
@@ -38,10 +38,10 @@ module L2cache(//64-block 256words
 
     reg      [2:0] state_w;
     reg      [2:0] state;
-    reg      [63:0] valid;
-    reg      [63:0] dirty;
-    reg     [29:8] tag     [0:63];
-    reg    [127:0] data    [0:63];
+    reg      [31:0] valid;
+    reg      [31:0] dirty;
+    reg     [29:7] tag     [0:31];
+    reg    [127:0] data    [0:31];
     wire           hit;
 //==== combinational circuit ==============================
     localparam S_IDLE = 3'd0;
@@ -52,9 +52,9 @@ module L2cache(//64-block 256words
 
 assign proc_stall = (~hit)&&(proc_read|proc_write);
 assign proc_rdata = proc_read & hit
-                  ? data[proc_addr[7:2]][proc_addr[1:0]*32+:32]
+    ? data[proc_addr[6:2]][proc_addr[1:0]*32+:32]
                   : 32'd0;
-assign hit = valid[proc_addr[7:2]] & (tag[proc_addr[7:2]] == proc_addr[29:8]);
+    assign hit = valid[proc_addr[6:2]] & (tag[proc_addr[6:2]] == proc_addr[29:7]);
 
 always@(*) begin
     case (state)
@@ -62,9 +62,9 @@ always@(*) begin
         if (hit)
             state_w = S_IDLE;
         else if (proc_read)
-            state_w = dirty[proc_addr[7:2]] ? S_WBRD : S_RD;
+            state_w = dirty[proc_addr[6:2]] ? S_WBRD : S_RD;
         else if (proc_write)
-            state_w = dirty[proc_addr[7:2]] ? S_WB : S_RDWB;
+            state_w = dirty[proc_addr[6:2]] ? S_WB : S_RDWB;
         else
             state_w = S_IDLE;
     end
@@ -86,8 +86,8 @@ always@( posedge clk ) begin
         mem_read   <= 0;
         mem_write  <= 0;
         state   <= S_IDLE;
-        valid   <= 64'b0;
-        dirty   <= 64'b0;
+        valid   <= 32'b0;
+        dirty   <= 32'b0;
     end
     else begin
         state   <= state_w;
@@ -95,10 +95,10 @@ always@( posedge clk ) begin
         S_IDLE: begin
             if (proc_read) begin
                 if (proc_stall) begin
-                    if (dirty[proc_addr[7:2]]) begin
+                    if (dirty[proc_addr[6:2]]) begin
                         mem_write  <= 1;
-                        mem_addr   <= {tag[proc_addr[7:2]],proc_addr[7:2]};
-                        mem_wdata  <= data[proc_addr[7:2]];
+                        mem_addr   <= {tag[proc_addr[6:2]],proc_addr[6:2]};
+                        mem_wdata  <= data[proc_addr[6:2]];
                     end else begin
                         mem_read   <= 1;
                         mem_addr   <= proc_addr[29:2];
@@ -107,13 +107,13 @@ always@( posedge clk ) begin
             end
             else if (proc_write) begin
                 if (hit) begin
-                    dirty[proc_addr[7:2]] <= 1;
-                    data[proc_addr[7:2]][proc_addr[1:0]*32+:32] <= proc_wdata;
+                    dirty[proc_addr[6:2]] <= 1;
+                    data[proc_addr[6:2]][proc_addr[1:0]*32+:32] <= proc_wdata;
                 end else begin
-                    if (dirty[proc_addr[7:2]]) begin
+                    if (dirty[proc_addr[6:2]]) begin
                         mem_write  <= 1;
-                        mem_addr   <= {tag[proc_addr[7:2]],proc_addr[7:2]};
-                        mem_wdata  <= data[proc_addr[7:2]];
+                        mem_addr   <= {tag[proc_addr[6:2]],proc_addr[6:2]};
+                        mem_wdata  <= data[proc_addr[6:2]];
                     end else begin
                         mem_read   <= 1;
                         mem_addr   <= proc_addr[29:2];
@@ -130,10 +130,10 @@ always@( posedge clk ) begin
         S_RD:
             if (mem_ready) begin
                 mem_read   <= 0;
-                valid[proc_addr[7:2]] <= 1;
-                dirty[proc_addr[7:2]] <= 0;
-                tag[proc_addr[7:2]] <= proc_addr[29:8];
-                data[proc_addr[7:2]] <= mem_rdata;
+                valid[proc_addr[6:2]] <= 1;
+                dirty[proc_addr[6:2]] <= 0;
+                tag[proc_addr[6:2]] <= proc_addr[29:7];
+                data[proc_addr[6:2]] <= mem_rdata;
             end
         S_WB:
             if (mem_ready) begin
@@ -143,10 +143,10 @@ always@( posedge clk ) begin
         S_RDWB:
             if (mem_ready) begin
                 mem_read   <= 0;
-                valid[proc_addr[7:2]] <= 1;
-                dirty[proc_addr[7:2]] <= 1;
-                tag[proc_addr[7:2]] <= proc_addr[29:8];
-                data[proc_addr[7:2]] <= mem_rdata;
+                valid[proc_addr[6:2]] <= 1;
+                dirty[proc_addr[6:2]] <= 1;
+                tag[proc_addr[6:2]] <= proc_addr[29:8];
+                data[proc_addr[6:2]] <= mem_rdata;
             end
         endcase
     end
