@@ -239,7 +239,6 @@ assign  IF_PCpX     = PC + 32'd4;
 //=================== IF/ID registers ====================//
     reg     [31:0]  ID_PC, ID_Instr, ID_PCpX;
 always@(posedge clk) begin
-$displayh("PC:",PC);
     if (!rst_n | flush_IF_ID) begin
         {ID_PC, ID_PCpX} <= 64'b0;
         ID_Instr <= {25'b0,7'b0010011}; // nop
@@ -330,14 +329,13 @@ assign  ID_PCpi = ID_PC + ID_imm; // addID jal and branch
     reg      [7:0]  EX_ctrl;
     reg      [4:0]  EX_addR1, EX_addR2, EX_addRD;
     reg      [3:0]  EX_InstrALU;
-    reg     [31:0]  EX_PCpX, EX_PCpi, EX_R1, EX_R2, EX_imm, EX_Instru;
+    reg     [31:0]  EX_PCpX, EX_PCpi, EX_R1, EX_R2, EX_imm;
 always@(posedge clk) begin
-	//$displayb("ID_Instr:",ID_Instr);
     if (!rst_n)
         {EX_ctrl, EX_addR1, EX_addR2, EX_addRD, EX_InstrALU, EX_PCpX, EX_PCpi, EX_R1, EX_R2, EX_imm} <= 187'b0;
     else if (wen_ID_EX)
-        {EX_ctrl, EX_addR1, EX_addR2, EX_addRD, EX_InstrALU, EX_PCpX, EX_PCpi, EX_R1, EX_R2, EX_imm, EX_Instru} <=
-        {ID_ctrl, ID_addR1, ID_addR2, ID_addRD, ID_InstrALU, ID_PCpX, ID_PCpi, ID_R1, ID_R2, ID_imm, ID_Instr};
+        {EX_ctrl, EX_addR1, EX_addR2, EX_addRD, EX_InstrALU, EX_PCpX, EX_PCpi, EX_R1, EX_R2, EX_imm} <=
+        {ID_ctrl, ID_addR1, ID_addR2, ID_addRD, ID_InstrALU, ID_PCpX, ID_PCpi, ID_R1, ID_R2, ID_imm};
 end
     //ID_R1, ID_R2 is output of register
 
@@ -409,12 +407,12 @@ end
 //=================== EX/MEM registers ===================//
     reg      [4:0]  MEM_ctrl;
     reg      [4:0]  MEM_addRD;
-    reg     [31:0]  MEM_R2, MEM_PCpX, MEM_Instru;
+    reg     [31:0]  MEM_R2, MEM_PCpX;
 always@(posedge clk) begin
     if (!rst_n)
-        {MEM_ctrl, MEM_addRD, MEM_R2, MEM_ALUout} <= 74'b0;
+        {MEM_ctrl, MEM_addRD, MEM_R2, MEM_ALUout, MEM_PCpX} <= 106'b0;
     else if (wen_EX_MEM)
-        {MEM_ctrl, MEM_addRD, MEM_R2, MEM_ALUout, MEM_PCpX, MEM_Instru} <= {EX_ctrl[4:0], EX_addRD, EX_R2, EX_ALUout, EX_PCpX, EX_Instru};
+        {MEM_ctrl, MEM_addRD, MEM_R2, MEM_ALUout, MEM_PCpX} <= {EX_ctrl[4:0], EX_addRD, EX_R2, EX_ALUout, EX_PCpX};
 end
 
 //========================= MEM ==========================//
@@ -430,12 +428,12 @@ assign  MEM_D_data   = DCACHE_rdata;
 
 //=================== MEM/WB registers ===================//
     reg      [2:0]  WB_ctrl;
-    reg     [31:0]  WB_ALUout, WB_D_data, WB_PCpX, WB_Instru;
+    reg     [31:0]  WB_ALUout, WB_D_data, WB_PCpX;
 always@(posedge clk) begin
     if (!rst_n)
-        {WB_ctrl, WB_addRD, WB_ALUout, WB_D_data} <= 72'b0;
+        {WB_ctrl, WB_addRD, WB_ALUout, WB_D_data, WB_PCpX} <= 104'b0;
     else if (wen_MEM_WB)
-        {WB_ctrl, WB_addRD, WB_ALUout, WB_D_data, WB_PCpX, WB_Instru} <= {MEM_ctrl[2:0], MEM_addRD, MEM_ALUout, MEM_D_data, MEM_PCpX, MEM_Instru};
+        {WB_ctrl, WB_addRD, WB_ALUout, WB_D_data, WB_PCpX} <= {MEM_ctrl[2:0], MEM_addRD, MEM_ALUout, MEM_D_data, MEM_PCpX};
 end
 
 //========================== WB ==========================//
@@ -528,7 +526,6 @@ always@(*)begin
 end
 
 always@(posedge clk) begin
-//$displayh("PC:",PC);
     if (!rst_n)
         Pcnxt_temp <= 32'd0;
     else
