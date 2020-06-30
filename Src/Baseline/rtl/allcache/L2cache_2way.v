@@ -1,4 +1,4 @@
-module L2cache(//32-set 256-word finished
+module L2cache(//32-set 128-word finished
     clk,
     proc_reset,
     proc_read,
@@ -38,13 +38,13 @@ module L2cache(//32-set 256-word finished
 
     reg      [2:0] state_w;
     reg      [2:0] state;
-    reg      [31:0] valid1, valid2;
-    reg      [31:0] dirty1, dirty2;
-    reg      [31:0] lru;             // 0:data1 1:data2
-    reg     [29:7] tag1    [0:31], tag2    [0:31];
-    reg    [127:0] data1   [0:31], data2   [0:31];
+    reg      [15:0] valid1, valid2;
+    reg      [15:0] dirty1, dirty2;
+    reg      [15:0] lru;             // 0:data1 1:data2
+    reg     [29:6] tag1    [0:15], tag2    [0:15];
+    reg    [127:0] data1   [0:15], data2   [0:15];
     wire           hit1, hit2;
-    wire     [6:2] set;
+    wire     [5:2] set;
 //==== combinational circuit ==============================
     localparam S_IDLE = 3'd0;
     localparam S_WBRD = 3'd1;
@@ -52,15 +52,15 @@ module L2cache(//32-set 256-word finished
     localparam S_WB   = 3'd3;
     localparam S_RDWB = 3'd4;
 
-assign set = proc_addr[6:2];
+    assign set = proc_addr[5:2];
 assign proc_stall = (~(hit1 | hit2))&&(proc_read|proc_write);
 assign proc_rdata = proc_read & hit1
                   ? data1[set][proc_addr[1:0]*32+:32]
                   : proc_read & hit2
                   ? data2[set][proc_addr[1:0]*32+:32]
                   : 32'd0;
-assign hit1 = valid1[set] & (tag1[set] == proc_addr[29:7]);
-assign hit2 = valid2[set] & (tag2[set] == proc_addr[29:7]);
+    assign hit1 = valid1[set] & (tag1[set] == proc_addr[29:6]);
+    assign hit2 = valid2[set] & (tag2[set] == proc_addr[29:6]);
 
 always@(*) begin
     case (state)
@@ -92,11 +92,11 @@ always@( posedge clk ) begin
         mem_read   <= 0;
         mem_write  <= 0;
         state   <= S_IDLE;
-        valid1  <= 32'b0;
-        valid2  <= 32'b0;
-        dirty1  <= 32'b0;
-        dirty2  <= 32'b0;
-        lru     <= 32'b0;
+        valid1  <= 16'b0;
+        valid2  <= 16'b0;
+        dirty1  <= 16'b0;
+        dirty2  <= 16'b0;
+        lru     <= 16'b0;
     end
     else begin
         state   <= state_w;
@@ -153,12 +153,12 @@ always@( posedge clk ) begin
                 if (~lru[set]) begin
                     valid1[set] <= 1;
                     dirty1[set] <= 0;
-                    tag1  [set] <= proc_addr[29:7];
+                    tag1  [set] <= proc_addr[29:6];
                     data1 [set] <= mem_rdata;
                 end else begin
                     valid2[set] <= 1;
                     dirty2[set] <= 0;
-                    tag2  [set] <= proc_addr[29:7];
+                    tag2  [set] <= proc_addr[29:6];
                     data2 [set] <= mem_rdata;
                 end
             end
@@ -173,12 +173,12 @@ always@( posedge clk ) begin
                 if (~lru[set]) begin
                     valid1[set] <= 1;
                     dirty1[set] <= 1;
-                    tag1  [set] <= proc_addr[29:7];
+                    tag1  [set] <= proc_addr[29:6];
                     data1 [set] <= mem_rdata;
                 end else begin
                     valid2[set] <= 1;
                     dirty2[set] <= 1;
-                    tag2  [set] <= proc_addr[29:7];
+                    tag2  [set] <= proc_addr[29:6];
                     data2 [set] <= mem_rdata;
                 end
             end
