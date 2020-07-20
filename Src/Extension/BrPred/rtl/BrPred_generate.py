@@ -42,7 +42,7 @@ with open("I_mem_BrPred_ref", "r") as f:
             line = line.replace("000000000010", "{:b}".format(nb_Br).zfill(12))
             line = line.replace("0x002", "0x"+"{:x}".format(nb_Br).zfill(3).upper())
             line = line.replace("13_05_20_00", little_endian_conv(line[front:back]))
-        if "//0x58//" in line:
+        if "//0x5C//" in line:
             line = line.replace("a+b+c = 6"       , "a+b+c = {:d}".format(total))
         I_mem_BrPred_file.write(line)        
 I_mem_BrPred_file.close()

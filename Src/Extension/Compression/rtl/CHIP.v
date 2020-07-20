@@ -361,7 +361,7 @@ end
     reg     [31:0]  MEM_R2, MEM_PCpX;
 always@(posedge clk) begin
     if (!rst_n)
-        {MEM_ctrl, MEM_addRD, MEM_R2, MEM_ALUout} <= 74'b0;
+        {MEM_ctrl, MEM_addRD, MEM_R2, MEM_ALUout, MEM_PCpX} <= 106'b0;
     else if (wen_EX_MEM)
         {MEM_ctrl, MEM_addRD, MEM_R2, MEM_ALUout, MEM_PCpX} <= {EX_ctrl[4:0], EX_addRD, R2fwdEX, EX_ALUout, EX_PCpX};
 end
@@ -382,7 +382,7 @@ assign  MEM_D_data   = DCACHE_rdata;
     reg     [31:0]  WB_ALUout, WB_D_data, WB_PCpX;
 always@(posedge clk) begin
     if (!rst_n)
-        {WB_ctrl, WB_addRD, WB_ALUout, WB_D_data} <= 72'b0;
+        {WB_ctrl, WB_addRD, WB_ALUout, WB_D_data, WB_PCpX} <= 104'b0;
     else if (wen_MEM_WB)
         {WB_ctrl, WB_addRD, WB_ALUout, WB_D_data, WB_PCpX} <= {MEM_ctrl[2:0], MEM_addRD, MEM_ALUout, MEM_D_data, MEM_PCpX};
 end
@@ -408,23 +408,25 @@ assign  R1fwdID =   ( EX_addRD == ID_addR1) ?  EX_ALUout :
 
 assign  MEM_regWrite = MEM_ctrl[2];
 always@(*) begin
-    forward1 = 2'b00;
+    {forward1, forward2, forward_reg1, forward_reg2} = 6'b000000;
+    // 1. MEM Data hazard
     if(c_regWrite && WB_addRD!=0 && WB_addRD == EX_addR1 )
         forward1 = 2'b01;
-    if( MEM_regWrite && MEM_addRD!=0 && MEM_addRD == EX_addR1 )
-        forward1 = 2'b10;
-end
-always@(*) begin
-    forward2 = 2'b00;
     if(c_regWrite && WB_addRD!=0 && WB_addRD == EX_addR2 )
         forward2 = 2'b01;
+
+    // 2. EX Data hazard
+    if( MEM_regWrite && MEM_addRD!=0 && MEM_addRD == EX_addR1 )
+        forward1 = 2'b10;
     if( MEM_regWrite && MEM_addRD!=0 && MEM_addRD == EX_addR2 )
         forward2 = 2'b10;
+
+    // data write in register need one cycle, need forwarding
+    if(c_regWrite && WB_addRD!=0 && WB_addRD == ID_addR1 )
+        forward_reg1 = 1'b1;
+    if(c_regWrite && WB_addRD!=0 && WB_addRD == ID_addR2 )
+        forward_reg2 = 1'b1;
 end
-always@(*)
-    forward_reg1 = c_regWrite && WB_addRD!=0 && WB_addRD == ID_addR1;
-always@(*)
-    forward_reg2 = c_regWrite && WB_addRD!=0 && WB_addRD == ID_addR2;
 //========================= FSM ==========================//
     parameter  IDLE   = 1'b0;
     parameter  HAZARD = 1'b1;
@@ -572,16 +574,15 @@ module cache_D(
     reg    [127:0] data1   [0:3], data2   [0:3];
     wire           hit1, hit2;
     wire     [3:2] set = proc_addr[3:2];
-    wire     [6:0] temp;
 //==== combinational circuit ==============================
     localparam S_IDLE = 2'd0;
     localparam S_WB   = 2'd3;
     localparam S_RD   = 2'd2;
-assign temp = (proc_addr[1:0] << 5);
+
 assign proc_stall = ~(hit1 | hit2) && (proc_read | proc_write);
 assign proc_rdata = hit1
-                  ? data1[set][temp+:32]
-                  : data2[set][temp+:32];
+                  ? data1[set][proc_addr[1:0]*32+:32]
+                  : data2[set][proc_addr[1:0]*32+:32];
 assign hit1 = valid1[set] & (tag1[set] == proc_addr[29:4]);
 assign hit2 = valid2[set] & (tag2[set] == proc_addr[29:4]);
 
@@ -634,10 +635,10 @@ always@( posedge clk ) begin
             else if (proc_write) begin
                 if (hit1) begin
                     dirty1[set] <= 1;
-                    data1[set][temp+:32] <= proc_wdata;
+                    data1[set][proc_addr[1:0]*32+:32] <= proc_wdata;
                 end else if (hit2) begin
                     dirty2[set] <= 1;
-                    data2[set][temp+:32] <= proc_wdata;
+                    data2[set][proc_addr[1:0]*32+:32] <= proc_wdata;
                 end else if (~lru[set] & dirty1[set]) begin
                     mem_write  <= 1;
                     mem_addr   <= {tag1[set],set};
@@ -726,15 +727,14 @@ module cache_I(
     reg    [127:0] data1   [0:3], data2   [0:3];
     wire           hit1, hit2;
     wire     [3:2] set = proc_addr[3:2];
-    wire     [6:0] temp;
 //==== combinational circuit ==============================
     localparam S_IDLE = 1'b0;
     localparam S_RD   = 1'b1;
-assign temp = (proc_addr[1:0] << 5);
+
 assign proc_stall = ~(hit1 | hit2) && proc_read;
 assign proc_rdata = hit1
-                  ? data1[set][temp+:32]
-                  : data2[set][temp+:32];
+                  ? data1[set][proc_addr[1:0]*32+:32]
+                  : data2[set][proc_addr[1:0]*32+:32];
 assign mem_write = 1'b0;
 assign hit1 = valid1[set] & (tag1[set] == proc_addr[29:4]);
 assign hit2 = valid2[set] & (tag2[set] == proc_addr[29:4]);
